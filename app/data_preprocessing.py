@@ -279,7 +279,7 @@ def hmmsearch_results_to_classification_sdf(
     some_profile = sdf_train.column_names[0]
     for m in missing_records:
         sparse_dict[(m, some_profile)] = 0
-    
+
     sdf = from_sparse_dict(sparse_dict, lables=None, dtype=np.int64)
     colnames = list(sdf.column_names)
     new_order = [colnames.index(c) for c in sdf_train.column_names]
@@ -311,29 +311,6 @@ def sample_subclusters_for_model(
         sampled_records.extend(random.sample(records, n_seqs))
     with open(output_sampled_subclusters_fasta_path, "w+") as f:
         SeqIO.write(sampled_records, f, "fasta")
-
-
-def sample_non_subcluster_sequences_for_model(
-    input_ortholog_fasta_file_path: str,
-    input_rep_seq_fasta_file_path: str,
-    n_sequences: int,
-    output_sampled_orthologs_fasta_path: str,
-) -> None:
-    """
-    Samples sequences that are not in subclusters and saves them to a single fasta file.
-    :param input_ortholog_fasta_file_path: path to fasta file containing ortholog sequences
-    :param input_rep_seq_fasta_file_path: path to fasta file containing representative sequences
-    :param n_sequences: number of sequences to sample
-    :param output_sampled_orthologs_fasta_path: path to output fasta file
-    :return: None
-    """
-    parser = FastaParser(input_ortholog_fasta_file_path)
-    all_ids = parser.get_ids()
-    all_subcluster_ids = FastaParser(input_rep_seq_fasta_file_path).get_ids()
-    candidates = set(all_ids) - set(all_subcluster_ids)
-    chosen_ids = random.sample(candidates, min(n_sequences, len(candidates)))
-    with open(output_sampled_orthologs_fasta_path, "w+") as f:
-        parser.export_sequences(chosen_ids, f)
 
 
 def sample_unknown_sequences_for_model(
@@ -465,7 +442,7 @@ def augment_single_subcluster(
 
 
 def augment_small_subclusters(
-    subclusters_dir: str, output_dir: str, min_sequences_per_subcluster: int = 5
+    subclusters_dir: str, output_dir: str, min_sequences_per_subcluster: int = 6
 ) -> int:
     """
     Augments small subclusters by creating alignments and profiles, then emitting sequences from the profiles and concatenating them with the original subcluster fasta files.

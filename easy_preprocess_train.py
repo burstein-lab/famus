@@ -31,7 +31,6 @@ def main(
     cfg = get_cfg()
     if not nthreads:
         nthreads = cfg["nthreads"]
-    
 
     if not os.path.exists(input_fasta_dir_path):
         raise ValueError("Input fasta directory does not exist")
@@ -40,9 +39,7 @@ def main(
     number_of_sampled_sequences_per_subcluster = cfg[
         "number_of_sampled_sequences_per_subcluster"
     ]
-    number_of_sampled_non_subcluster_sequences = cfg[
-        "number_of_sampled_non_subcluster_sequences"
-    ]
+
     number_of_sampled_unknown_sequences = cfg["number_of_sampled_unknown_sequences"]
 
     if not (
@@ -55,16 +52,7 @@ def main(
         raise ValueError(
             f"number_of_sampled_sequences_per_subcluster must be 'use_all' or a positive integer. got {number_of_sampled_sequences_per_subcluster}"
         )
-    if not (
-        number_of_sampled_non_subcluster_sequences == "use_all"
-        or (
-            isinstance(number_of_sampled_non_subcluster_sequences, int)
-            and number_of_sampled_non_subcluster_sequences > 0
-        )
-    ):
-        raise ValueError(
-            f"number_of_sampled_non_subcluster_sequences must be 'use_all' or a positive integer. got {number_of_sampled_non_subcluster_sequences}"
-        )
+
     if not (
         number_of_sampled_unknown_sequences in ["use_all", "do_not_use"]
         or (
@@ -75,11 +63,17 @@ def main(
         raise ValueError(
             f"number_of_sampled_unknown_sequences must be 'use_all', 'do_not_use', or a positive integer. got {number_of_sampled_unknown_sequences}"
         )
-    if unknown_sequences_fasta_path and number_of_sampled_unknown_sequences == "do_not_use":
+    if (
+        unknown_sequences_fasta_path
+        and number_of_sampled_unknown_sequences == "do_not_use"
+    ):
         raise ValueError(
             "unknown_sequences_fasta_path was provided but number_of_sampled_unknown_sequences is set to 'do_not_use'"
         )
-    if not unknown_sequences_fasta_path and number_of_sampled_unknown_sequences != "do_not_use":
+    if (
+        not unknown_sequences_fasta_path
+        and number_of_sampled_unknown_sequences != "do_not_use"
+    ):
         raise ValueError(
             "unknown_sequences_fasta_path was not provided but number_of_sampled_unknown_sequences is not set to 'do_not_use'"
         )
@@ -89,7 +83,7 @@ def main(
     logger.info("Input fasta directory: {}".format(input_fasta_dir_path))
     logger.info("Data directory: {}".format(data_dir_path))
     logger.info("Number of threads: {}".format(nthreads))
-    
+
     if not os.path.exists(data_dir_path):
         os.mkdir(data_dir_path)
         state = {
@@ -212,24 +206,6 @@ def main(
             files=[rep_seq_dir + f for f in os.listdir(rep_seq_dir)],
             output=data_dir_path + "rep_seq.fasta",
             track_progress=False,
-        )
-        if not isinstance(number_of_sampled_non_subcluster_sequences, int):
-            number_of_sampled_non_subcluster_sequences = inf
-            logger.info("using all non subcluster sequences for model")
-        else:
-            logger.info("sampling non subcluster sequences for model")
-        dp.sample_non_subcluster_sequences_for_model(
-            input_ortholog_fasta_file_path=data_dir_path + "all_sequneces.fasta",
-            input_rep_seq_fasta_file_path=data_dir_path + "rep_seq.fasta",
-            n_sequences=number_of_sampled_non_subcluster_sequences,
-            output_sampled_orthologs_fasta_path=data_dir_path
-            + "sampled_orthologs.fasta",
-        )
-        os.system(
-            "cat "
-            + data_dir_path
-            + "sampled_orthologs.fasta >> "
-            + full_hmmsearch_input
         )
 
         if number_of_sampled_unknown_sequences == "use_all":
