@@ -1,0 +1,27 @@
+BootStrap: docker
+From: staphb/hmmer:latest
+
+%files
+    README.md /README.md
+
+%environment
+    export PATH=/usr/lib/seqtk/:/usr/lib/mmseqs/bin/:$PATH
+
+%post
+    apt-get update; apt-get -y upgrade
+    apt-get install -y python3-pip mafft wget perl curl
+    apt install -y libz-dev libssl-dev libcurl4-gnutls-dev libexpat1-dev gettext cmake gcc
+    cd /tmp
+    curl -o git.tar.gz https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.26.2.tar.gz
+    tar -zxf git.tar.gz
+    cd git-*
+    make prefix=/usr/local all
+    make prefix=/usr/local install
+    pip install --no-cache-dir psutil scipy numpy pandas tqdm biopython scikit-learn matplotlib pyyaml
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    wget https://mmseqs.com/latest/mmseqs-linux-avx2.tar.gz; tar xvfz mmseqs-linux-avx2.tar.gz -C /usr/lib/
+    cd /usr/lib; git clone https://github.com/lh3/seqtk.git; cd seqtk; make
+    ln -s /usr/bin/python3.10 /usr/bin/python
+
+%runscript
+    cat /README.md
