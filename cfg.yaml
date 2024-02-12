@@ -6,6 +6,7 @@ threshold: 'bootstrap' # 'bootstrap' or positive float
 chunksize: 20000
 
 # the following parameters are only relevant for the training preprocessing pipeline
+
 threads_per_mmseqs_job: 4
 number_of_sampled_sequences_per_subcluster: 'use_all' # 'use_all' or int
-number_of_sampled_unknown_sequences: 'use_all' # 'use_all', int, or 'do_not_use'
+factor_of_sampled_unknown_sequences: 1.0 # 'use_all', float, or 'do_not_use'

@@ -1,6 +1,7 @@
 import argparse
 import os
 from math import inf
+import subprocess
 
 import yaml
 
@@ -40,7 +41,7 @@ def main(
         "number_of_sampled_sequences_per_subcluster"
     ]
 
-    number_of_sampled_unknown_sequences = cfg["number_of_sampled_unknown_sequences"]
+    fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
 
     if not (
         number_of_sampled_sequences_per_subcluster == "use_all"
@@ -54,28 +55,28 @@ def main(
         )
 
     if not (
-        number_of_sampled_unknown_sequences in ["use_all", "do_not_use"]
+        fraction_of_sampled_unknown_sequences in ["use_all", "do_not_use"]
         or (
-            isinstance(number_of_sampled_unknown_sequences, int)
-            and number_of_sampled_unknown_sequences > 0
+            isinstance(fraction_of_sampled_unknown_sequences, float)
+            and fraction_of_sampled_unknown_sequences > 0
         )
     ):
         raise ValueError(
-            f"number_of_sampled_unknown_sequences must be 'use_all', 'do_not_use', or a positive integer. got {number_of_sampled_unknown_sequences}"
+            f"fraction_of_sampled_unknown_sequences must be 'use_all', 'do_not_use', or a positive float. got {fraction_of_sampled_unknown_sequences}"
         )
     if (
         unknown_sequences_fasta_path
-        and number_of_sampled_unknown_sequences == "do_not_use"
+        and fraction_of_sampled_unknown_sequences == "do_not_use"
     ):
         raise ValueError(
-            "unknown_sequences_fasta_path was provided but number_of_sampled_unknown_sequences is set to 'do_not_use'"
+            "unknown_sequences_fasta_path was provided but fraction_of_sampled_unknown_sequences is set to 'do_not_use'"
         )
     if (
         not unknown_sequences_fasta_path
-        and number_of_sampled_unknown_sequences != "do_not_use"
+        and fraction_of_sampled_unknown_sequences != "do_not_use"
     ):
         raise ValueError(
-            "unknown_sequences_fasta_path was not provided but number_of_sampled_unknown_sequences is not set to 'do_not_use'"
+            "unknown_sequences_fasta_path was not provided but fraction_of_sampled_unknown_sequences is not set to 'do_not_use'"
         )
     if not data_dir_path.endswith("/"):
         data_dir_path += "/"
@@ -207,17 +208,22 @@ def main(
             output=data_dir_path + "rep_seq.fasta",
             track_progress=False,
         )
-
-        if number_of_sampled_unknown_sequences == "use_all":
+        n_sampled_subcluster_sequences = int(
+            subprocess.check_output("grep -c '>' " + full_hmmsearch_input, shell=True)
+        )
+        if fraction_of_sampled_unknown_sequences == "use_all":
             logger.info("using all unknown sequences for model")
             os.system(
                 "cat " + unknown_sequences_fasta_path + " >> " + full_hmmsearch_input
             )
-        elif not number_of_sampled_unknown_sequences == "do_not_use":
+        elif not fraction_of_sampled_unknown_sequences == "do_not_use":
             logger.info("sampling unknown sequences for model")
             dp.sample_unknown_sequences_for_model(
                 input_unknown_sequences_fasta_path=unknown_sequences_fasta_path,
-                n_sequences=number_of_sampled_unknown_sequences,
+                n_sequences=int(
+                    n_sampled_subcluster_sequences
+                    * fraction_of_sampled_unknown_sequences
+                ),
                 output_sampled_unknown_sequences_fasta_path=data_dir_path
                 + "sampled_unknown_sequences.fasta",
             )

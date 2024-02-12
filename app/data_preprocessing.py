@@ -326,10 +326,13 @@ def sample_unknown_sequences_for_model(
     :return: None
     """
     parser = FastaParser(input_unknown_sequences_fasta_path)
-    num_ids = len(parser.get_ids())
-    n_sequences = min(n_sequences, num_ids)
+    sequences = parser.get_ids()
+    unique_sequences = list(set(sequences))
+    n_to_sample = min(n_sequences, len(unique_sequences))
+    sampled = random.sample(unique_sequences, n_to_sample)
+    assert len(sampled) == n_to_sample
     with open(output_sampled_unknown_sequences_fasta_path, "w+") as f:
-        parser.export_random_sequences(n_sequences, f)
+        parser.export_sequences(sampled, f)
 
 
 def emit_sequences(profile_path: str, output_path: str, n_sequences: int) -> None:
