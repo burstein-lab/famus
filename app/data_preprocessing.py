@@ -375,7 +375,7 @@ def hmmbuild(input_path: str, output_path: str, name: str) -> None:
     :return: None
     """
     subprocess.call(
-        "hmmbuild -n {} {} {}".format(name, output_path, input_path).split(" "),
+        "hmmbuild -n --amino {} {} {}".format(name, output_path, input_path).split(" "),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -424,24 +424,42 @@ def augment_single_subcluster(
     :return: None
     """
     subcluster_name = subcluster_path.split("/")[-1].removesuffix(".fasta")
-    qmafft(subcluster_path, "tmp/{}.aln".format(subcluster_name))
+    qmafft(
+        input_path=subcluster_path,
+        output_path=f"tmp/{subcluster_name}.aln",
+    )
+    assert os.path.exists(f"tmp/{subcluster_name}.aln"), (
+        f"tmp/{subcluster_name}.aln" + " does not exist"
+    )
     hmmbuild(
-        "tmp/{}.aln".format(subcluster_name),
-        "tmp/{}.hmm".format(subcluster_name),
-        subcluster_name,
+        input_path=f"tmp/{subcluster_name}.aln",
+        output_path=f"tmp/{subcluster_name}.hmm",
+        name=subcluster_name,
+    )
+    assert os.path.exists(f"tmp/{subcluster_name}.hmm"), (
+        f"tmp/{subcluster_name}.hmm" + " does not exist"
     )
     emit_sequences(
-        "tmp/{}.hmm".format(subcluster_name), "tmp/emission.faa", sequences_to_emit
+        profile_path=f"tmp/{subcluster_name}.hmm",
+        output_path=f"tmp/{subcluster_name}_emission.fasta",
+        n_sequences=sequences_to_emit,
+    )
+    assert os.path.exists(f"tmp/{subcluster_name}_emission.fasta"), (
+        f"tmp/{subcluster_name}_emission.fasta" + " does not exist"
     )
     concatenate_files(
-        [subcluster_path, "tmp/emission.faa"],
-        output_dir + subcluster_name + ".fasta",
+        files=[subcluster_path, f"tmp/{subcluster_name}_emission.fasta"],
+        output=output_dir + subcluster_name + ".fasta",
         track_progress=False,
     )
+    assert os.path.exists(output_dir + subcluster_name + ".fasta"), (
+        output_dir + subcluster_name + ".fasta" + " does not exist"
+    )
+
     # delete tmp files
-    os.remove("tmp/{}.aln".format(subcluster_name))
-    os.remove("tmp/{}.hmm".format(subcluster_name))
-    os.remove("tmp/emission.faa")
+    os.remove(f"tmp/{subcluster_name}.aln")
+    os.remove(f"tmp/{subcluster_name}.hmm")
+    os.remove(f"tmp/{subcluster_name}_emission.fasta")
 
 
 def augment_small_subclusters(
