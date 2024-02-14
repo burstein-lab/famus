@@ -2,7 +2,6 @@ import argparse
 import os
 from math import inf
 import subprocess
-
 import yaml
 
 from app import data_preprocessing as dp
@@ -89,6 +88,7 @@ def main(
         os.mkdir(data_dir_path)
         state = {
             "subcluster_dir": None,
+            "leftovers_dir": None,
             "rep_seq_dir": None,
             "augmented_subcluster_dir": None,
             "full_profile_dir": None,
@@ -118,26 +118,35 @@ def main(
         state = yaml.full_load(open(state_file_path, "r"))
         skip = True
 
+    # create tmp directory
+    tmp_dir_path = data_dir_path + "tmp/"
+    os.makedirs(tmp_dir_path, exist_ok=True)
     # Create initial subclusters
     if not state["subcluster_dir"] or not state["rep_seq_dir"] or not skip:
         skip = False
         subcluster_dir = data_dir_path + "subclusters/"
+        leftovers_dir = data_dir_path + "leftovers/"
         rep_seq_dir = data_dir_path + "representative_sequences/"
         logger.info("Creating initial subclusters")
         dp.orthologs_to_subclusters(
             ortholog_fasta_dir=input_fasta_dir_path,
             output_subcluster_dir=subcluster_dir,
+            output_leftovers_dir=leftovers_dir,
             output_rep_seq_dir=rep_seq_dir,
+            tmp_dir_path=tmp_dir_path,
             nthreads=nthreads,
         )
         state["subcluster_dir"] = subcluster_dir
+        state["leftovers_dir"] = leftovers_dir
         state["rep_seq_dir"] = rep_seq_dir
         yaml.dump(state, open(state_file_path, "w+"))
     else:
         logger.info("Using existing subclusters")
         subcluster_dir = state["subcluster_dir"]
+        leftovers_dir = state["leftovers_dir"]
         rep_seq_dir = state["rep_seq_dir"]
 
+    exit()
     # Augment subclusters
     if not state["augmented_subcluster_dir"] or not skip:
         skip = False
@@ -161,6 +170,7 @@ def main(
         dp.create_subcluster_profiles(
             subcluster_dir=augmented_subcluster_dir,
             profile_dir=full_profile_dir,
+            tmp_dir_path=tmp_dir_path,
             nthreads=nthreads,
         )
         state["full_profile_dir"] = full_profile_dir
@@ -245,7 +255,7 @@ def main(
         logger.info("Running full hmmsearch")
         full_hmmsearch_results = data_dir_path + "full_hmmsearch_results.txt"
         if not (skip and state["hmmsearch_tmp_path"]):
-            hmmsearch_tmp_path = "tmp_" + now() + "/"
+            hmmsearch_tmp_path = tmp_dir_path + "hmmsearch/"
             os.mkdir(hmmsearch_tmp_path)
             state["hmmsearch_tmp_path"] = hmmsearch_tmp_path
             yaml.dump(state, open(state_file_path, "w+"))
@@ -312,6 +322,8 @@ def main(
         subcluster_split_profiles_dir = state["subcluster_split_profiles_dir"]
 
     if not state["split_hmmsearch_results"] or not skip:
+        split_hmmsearch_tmp_dir_path = tmp_dir_path + "split_hmmsearch/"
+        os.makedirs(split_hmmsearch_tmp_dir_path, exist_ok=True)
         logger.info("Running split hmmsearch")
         skip = False
         split_hmmsearch_results_path = data_dir_path + "split_hmmsearch_results.txt"
@@ -320,7 +332,7 @@ def main(
             input_fasta_dir_for_scoring_path=subcluster_split_scoring_dir,
             input_split_sequence_md_path=subcluster_split_md_path,
             output_split_hmmsearch_results_path=split_hmmsearch_results_path,
-            tmp_path="",
+            tmp_path=split_hmmsearch_tmp_dir_path,
             nthreads=nthreads,
         )
         state["split_hmmsearch_results"] = split_hmmsearch_results_path

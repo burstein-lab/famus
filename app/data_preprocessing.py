@@ -413,7 +413,7 @@ def fasta_is_small(path: str, n: int) -> int | bool:
 
 
 def augment_single_subcluster(
-    subcluster_path: str, output_dir: str, sequences_to_emit: int
+    subcluster_path: str, output_dir: str, tmp_dir_path: str, sequences_to_emit: int
 ) -> None:
     """
     Augments a single subcluster fasta file.
@@ -426,29 +426,29 @@ def augment_single_subcluster(
     subcluster_name = subcluster_path.split("/")[-1].removesuffix(".fasta")
     qmafft(
         input_path=subcluster_path,
-        output_path=f"tmp/{subcluster_name}.aln",
+        output_path=f"{tmp_dir_path}{subcluster_name}.aln",
     )
-    assert os.path.exists(f"tmp/{subcluster_name}.aln"), (
-        f"tmp/{subcluster_name}.aln" + " does not exist"
+    assert os.path.exists(f"{tmp_dir_path}{subcluster_name}.aln"), (
+        f"{tmp_dir_path}{subcluster_name}.aln" + " does not exist"
     )
     hmmbuild(
-        input_path=f"tmp/{subcluster_name}.aln",
-        output_path=f"tmp/{subcluster_name}.hmm",
+        input_path=f"{tmp_dir_path}{subcluster_name}.aln",
+        output_path=f"{tmp_dir_path}{subcluster_name}.hmm",
         name=subcluster_name,
     )
-    assert os.path.exists(f"tmp/{subcluster_name}.hmm"), (
-        f"tmp/{subcluster_name}.hmm" + " does not exist"
+    assert os.path.exists(f"{tmp_dir_path}{subcluster_name}.hmm"), (
+        f"{tmp_dir_path}{subcluster_name}.hmm" + " does not exist"
     )
     emit_sequences(
-        profile_path=f"tmp/{subcluster_name}.hmm",
-        output_path=f"tmp/{subcluster_name}_emission.fasta",
+        profile_path=f"{tmp_dir_path}{subcluster_name}.hmm",
+        output_path=f"{tmp_dir_path}{subcluster_name}_emission.fasta",
         n_sequences=sequences_to_emit,
     )
-    assert os.path.exists(f"tmp/{subcluster_name}_emission.fasta"), (
-        f"tmp/{subcluster_name}_emission.fasta" + " does not exist"
+    assert os.path.exists(f"{tmp_dir_path}{subcluster_name}_emission.fasta"), (
+        f"{tmp_dir_path}{subcluster_name}_emission.fasta" + " does not exist"
     )
     concatenate_files(
-        files=[subcluster_path, f"tmp/{subcluster_name}_emission.fasta"],
+        files=[subcluster_path, f"{tmp_dir_path}{subcluster_name}_emission.fasta"],
         output=output_dir + subcluster_name + ".fasta",
         track_progress=False,
     )
@@ -457,13 +457,16 @@ def augment_single_subcluster(
     )
 
     # delete tmp files
-    os.remove(f"tmp/{subcluster_name}.aln")
-    os.remove(f"tmp/{subcluster_name}.hmm")
-    os.remove(f"tmp/{subcluster_name}_emission.fasta")
+    os.remove(f"{tmp_dir_path}{subcluster_name}.aln")
+    os.remove(f"{tmp_dir_path}{subcluster_name}.hmm")
+    os.remove(f"{tmp_dir_path}{subcluster_name}_emission.fasta")
 
 
 def augment_small_subclusters(
-    subclusters_dir: str, output_dir: str, min_sequences_per_subcluster: int = 6
+    subclusters_dir: str,
+    output_dir: str,
+    tmp_dir: str,
+    min_sequences_per_subcluster: int = 6,
 ) -> int:
     """
     Augments small subclusters by creating alignments and profiles, then emitting sequences from the profiles and concatenating them with the original subcluster fasta files.
@@ -494,6 +497,7 @@ def augment_small_subclusters(
                 augment_single_subcluster(
                     subcluster_path,
                     output_dir,
+                    tmp_dir,
                     sequences_to_emit=min_sequences_per_subcluster
                     - n_sequences_in_fasta,
                 )
@@ -578,25 +582,28 @@ def randomly_split_subclusters(
         pickle.dump(split_subcluster_md, f)
 
 
-def _create_subcluster_profile(path: str, full_profile_dir: str) -> None:
+def _create_subcluster_profile(
+    path: str, full_profile_dir: str, tmp_dir_path: str
+) -> None:
     """
     Creates a profile from a subcluster fasta file.
     :param path: path to subcluster fasta file
     :param full_profile_dir: path to output directory for profiles
     :return: None
     """
-    subcluster_name = path.split("/")[-1].removesuffix(".faa").removesuffix(".fasta")
-    qmafft(path, f"tmp/{subcluster_name}.full.aln")
+    subcluster_name = os.path.basename(path).removesuffix(".fasta")
+    output_hmm_path = os.path.join(full_profile_dir, subcluster_name + ".hmm")
+    qmafft(path, f"{tmp_dir_path}{subcluster_name}.full.aln")
     hmmbuild(
-        f"tmp/{subcluster_name}.full.aln",
-        full_profile_dir + subcluster_name + ".hmm",
+        f"{tmp_dir_path}{subcluster_name}.full.aln",
+        output_hmm_path,
         subcluster_name,
     )
-    os.remove(f"tmp/{subcluster_name}.full.aln")
+    os.remove(f"{tmp_dir_path}{subcluster_name}.full.aln")
 
 
 def create_subcluster_profiles(
-    subcluster_dir: str, profile_dir: str, nthreads=nthreads
+    subcluster_dir: str, profile_dir: str, tmp_dir_path: str, nthreads=nthreads
 ) -> None:
     """
     Creates profiles from subcluster fasta files.
@@ -628,7 +635,7 @@ def create_subcluster_profiles(
     pool = mp.Pool(processes=nthreads)
     pool.starmap(
         _create_subcluster_profile,
-        iterable=[(path, profile_dir) for path in subcluster_paths],
+        iterable=[(path, profile_dir, tmp_dir_path) for path in subcluster_paths],
     )
 
 
@@ -890,6 +897,8 @@ def _convert_fasta_headers(
     """
     Writes a fasta file with new headers and a mapping file from the old headers to the new ones.
     Used because mmseqs has ambiguity in how it handles fasta headers so this standardizes them.
+    After clustering, the mapping file is used to map the substitute headers back to the original
+    with _convert_fasta_headers_back.
     :param input_fasta_path: path to input fasta file
     :param output_fasta_path: path to output fasta file
     :param output_mapping_file: path to output mapping file
@@ -938,7 +947,8 @@ def _convert_fasta_headers_back(
 
 def single_ortholog_to_subclusters(
     file_path: str,
-    output_path: str,
+    subclusters_output_path: str,
+    leftovers_output_path: str,
     tmp_nr90: str,
     tmp_clu: str,
     output_rep_seq_dir: str,
@@ -953,25 +963,35 @@ def single_ortholog_to_subclusters(
     :param output_subcluster_dir: path to output directory for subclusters
     :return: None
     """
-    fname = file_path.split("/")[-1] if "/" in file_path else file_path
-    fname = ".".join(fname.split(".")[:-1]) if "." in fname else fname
+    fname = os.path.basename(file_path).removesuffix(".fasta")
     _convert_fasta_headers(
-        file_path, "tmp/{}.faa".format(fname), "tmp/{}.mapping".format(fname)
+        file_path,
+        f"{tmp_nr90}{fname}.fasta",
+        f"{tmp_nr90}{fname}.mapping",
     )
     subprocess.call(
-        f"mmseqs easy-cluster tmp/{fname}.faa {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_nthreads} -s 7.5 -c 0.8 --min-seq-id 0.9".split(
-            " "
-        ),
+        f"""mmseqs easy-cluster \
+        {tmp_nr90}{fname}.fasta \
+        {tmp_nr90}{fname} \
+        {tmp_nr90}{fname}_tmp \
+            --threads {mmseq_nthreads} \
+            -s 7.5 \
+            -c 0.8 \
+            --min-seq-id 0.9""".split(" "),
         stdout=subprocess.DEVNULL,
     )
     shutil.copyfile(
         f"{tmp_nr90}{fname}_rep_seq.fasta",
-        f'{output_rep_seq_dir}{file_path.split("/")[-1]}',
+        f"{output_rep_seq_dir}{fname}.fasta",
     )
     subprocess.call(
-        f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c 0.5 {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}".split(
-            " "
-        ),
+        f"""mmseqs easy-cluster \
+            {tmp_nr90}{fname}_rep_seq.fasta \
+            {tmp_clu}{fname} \
+                -s 7.5 \
+                -c 0.5 \
+            {tmp_clu}{fname}_tmp \
+                --threads {mmseq_nthreads}""".split(" "),
         stdout=subprocess.DEVNULL,
     )
     clusters = {}
@@ -995,7 +1015,7 @@ def single_ortholog_to_subclusters(
         records = [record for record in SeqIO.parse(f, "fasta")]
     records = {record.id: record for record in records}
     subcluster_counter = 1
-    records_to_sc0 = []
+    records_to_leftovers = []
 
     for cluster, seq_ids in clusters.items():
         if len(seq_ids) >= c:
@@ -1007,33 +1027,35 @@ def single_ortholog_to_subclusters(
                 )
             _convert_fasta_headers_back(
                 f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
-                f"tmp/{fname}.mapping",
-                f"{output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
+                f"{tmp_nr90}{fname}.mapping",
+                f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
             )
             subcluster_counter += 1
             os.remove(
                 f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta"
             )
         else:
-            records_to_sc0 += [records[seq_id] for seq_id in seq_ids]
+            records_to_leftovers += [records[seq_id] for seq_id in seq_ids]
 
     shutil.copyfile(
-        f'{output_rep_seq_dir}{file_path.split("/")[-1]}',
-        f'{output_rep_seq_dir}{file_path.split("/")[-1]}.tmp',
+        f"{output_rep_seq_dir}{fname}.fasta",
+        f"{output_rep_seq_dir}{fname}.fasta.tmp",
     )
     _convert_fasta_headers_back(
-        f'{output_rep_seq_dir}{file_path.split("/")[-1]}.tmp',
-        f"tmp/{fname}.mapping",
-        f'{output_rep_seq_dir}{file_path.split("/")[-1]}',
+        f"{output_rep_seq_dir}{fname}.fasta.tmp",
+        f"{tmp_nr90}{fname}.mapping",
+        f"{output_rep_seq_dir}{fname}.fasta",
     )
-    os.remove(f'{output_rep_seq_dir}{file_path.split("/")[-1]}.tmp')
-    if len(records_to_sc0) > 0:
-        with open(f"{tmp_clu}{fname}.sub_cluster.cluster.0.fasta", "w+") as f:
-            SeqIO.write(records_to_sc0, f, "fasta")
+    os.remove(
+        f"{output_rep_seq_dir}{fname}.fasta.tmp",
+    )
+    if len(records_to_leftovers) > 0:
+        with open(f"{tmp_clu}{fname}.leftovers.fasta", "w+") as f:
+            SeqIO.write(records_to_leftovers, f, "fasta")
         _convert_fasta_headers_back(
-            f"{tmp_clu}{fname}.sub_cluster.cluster.0.fasta",
-            "tmp/{}.mapping".format(fname),
-            output_path + f"{fname}.sub_cluster.cluster.0.fasta",
+            f"{tmp_clu}{fname}.leftovers.fasta",
+            f"{tmp_nr90}{fname}.mapping",
+            f"{leftovers_output_path}{fname}.leftovers.fasta",
         )
         os.remove(f"{tmp_clu}{fname}.sub_cluster.cluster.0.fasta")
     try:
@@ -1047,12 +1069,16 @@ def single_ortholog_to_subclusters(
     os.remove(f"{tmp_clu}{fname}_cluster.tsv")
     os.remove(f"{tmp_clu}{fname}_rep_seq.fasta")
     os.remove(f"{tmp_clu}{fname}_all_seqs.fasta")
+    os.remove(f"{tmp_nr90}{fname}.fasta")
+    os.remove(f"{tmp_nr90}{fname}.mapping")
 
 
 def orthologs_to_subclusters(
     ortholog_fasta_dir: str,
     output_subcluster_dir: str,
+    output_leftovers_dir: str,
     output_rep_seq_dir: str,
+    tmp_dir_path: str,
     nthreads=nthreads,
 ) -> None:
     """
@@ -1064,21 +1090,15 @@ def orthologs_to_subclusters(
     :param nthreads: number of threads to use
     :return: None
     """
-    datetime_str = (
-        str(datetime.datetime.now())
-        .replace(" ", "_")
-        .replace(":", "_")
-        .replace(".", "_")
-        .replace("-", "_")
-    )
-    tmp_clu = "tmp/CLU/" + datetime_str + "/"
-    tmp_nr90 = "tmp/NR90/" + datetime_str + "/"
+
+    tmp_clu = os.path.join(tmp_dir_path, "CLU")
+    tmp_nr90 = os.path.join(tmp_dir_path, "NR90")
     if not output_rep_seq_dir.endswith("/"):
         output_rep_seq_dir += "/"
     if not os.path.exists(output_rep_seq_dir):
         os.mkdir(output_rep_seq_dir)
-    os.mkdir(tmp_clu)
-    os.mkdir(tmp_nr90)
+    os.makedirs(tmp_clu, exist_ok=True)
+    os.makedirs(tmp_nr90, exist_ok=True)
     ortholog_fasta_dir = (
         ortholog_fasta_dir
         if ortholog_fasta_dir.endswith("/")
@@ -1101,6 +1121,7 @@ def orthologs_to_subclusters(
             args=(
                 fp,
                 output_subcluster_dir,
+                output_leftovers_dir,
                 tmp_nr90,
                 tmp_clu,
                 output_rep_seq_dir,
