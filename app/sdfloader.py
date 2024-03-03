@@ -1,6 +1,8 @@
 import multiprocessing as mp
+import os
 import pickle
 import random
+import subprocess
 from typing import Generator
 
 import numpy as np
@@ -24,7 +26,9 @@ class SDFloader:
     def __init__(
         self,
         sdf: SparseDataFrame,
-        examples_per_class_limit=250,
+        leftovers_sequence_ids: dict,  # @TODO: add preferential sampling for leftovers
+        triplets_per_class=3000,
+        triplets_per_leftover=10,
         load_stack_size=100000,
         nthreads=2,
     ):
@@ -33,6 +37,11 @@ class SDFloader:
         self.load_stack_min_len = load_stack_size
         indices = set(range(len(sdf)))
         label_to_indices = sdf.get_label_to_indices()
+        index_ids_to_indices = {idx: i for i, idx in enumerate(sdf.index_ids)}
+        label_to_leftover_indices = {
+            label: [index_ids_to_indices[idx_id] for idx_id in idx_ids]
+            for label, idx_ids in leftovers_sequence_ids.items()
+        }
         manager = mp.Manager()
         label_to_indices = manager.dict(label_to_indices)
         pool = mp.Pool(nthreads - 1)
@@ -40,12 +49,28 @@ class SDFloader:
 
         triplets = []
         self.idx_load_stacks = []  # list of sets of indices to load iteratively to limit memory usage
+        args = []
+        for label in labels:
+            if label == "unknown":
+                continue
+            leftover_indices = (
+                label_to_leftover_indices[label]
+                if label in label_to_leftover_indices
+                else []
+            )
+            args.append(
+                (
+                    label_to_indices,
+                    label,
+                    indices,
+                    leftover_indices,
+                    triplets_per_class,
+                    triplets_per_leftover,
+                )
+            )
         triplets = pool.starmap(
             SDFloader.sample_triplets,
-            [
-                (label_to_indices, label, indices, examples_per_class_limit)
-                for label in labels
-            ],
+            args,
         )
         pool.close()
         pool.join()
@@ -137,7 +162,9 @@ class SDFloader:
         label_to_indices: dict,
         label: str,
         all_indices: set,
-        examples_per_class_limit: int,
+        leftovers_sequence_indices: list,
+        num_triplets: int,
+        num_triplets_per_leftover: int,
     ) -> list:
         """
         Creates triplets for a given label. The triplets are created in a way that the anchor and positive samples are
@@ -153,6 +180,37 @@ class SDFloader:
             return []  # do not create triplets for unknown class
         indices = label_to_indices[label]
         other_indices = list(all_indices - set(indices))
+        triplets = []
+        # sample for leftovers
+        if leftovers_sequence_indices:
+            ancors = np.array(
+                list(leftovers_sequence_indices) * num_triplets_per_leftover
+            )
+            positives = np.random.choice(
+                a=indices,
+                size=num_triplets_per_leftover * len(leftovers_sequence_indices),
+            )
+            negatives = np.random.choice(
+                a=other_indices,
+                size=num_triplets_per_leftover * len(leftovers_sequence_indices),
+            )
+            for ancor_idx, positive_idx, negative_idx in zip(
+                ancors, positives, negatives
+            ):
+                triplets.append((ancor_idx, positive_idx, negative_idx))
+
+            examples_per_class_limit = max(0, num_triplets - len(triplets))
+            logger.info(
+                "Created "
+                + str(len(triplets))
+                + "leftover triplets for label: "
+                + str(label)
+                + "..."
+            )
+            if examples_per_class_limit == 0:
+                return triplets
+        else:
+            examples_per_class_limit = num_triplets
         ancors = np.random.choice(
             a=indices, size=examples_per_class_limit, replace=True
         )
@@ -162,13 +220,12 @@ class SDFloader:
         negatives = np.random.choice(
             a=other_indices, size=examples_per_class_limit, replace=True
         )
-        triplets = []
         for ancor_idx, positive_idx, negative_idx in zip(ancors, positives, negatives):
             triplets.append((ancor_idx, positive_idx, negative_idx))
         logger.info(
             "Created "
             + str(len(triplets))
-            + " triplets for label: "
+            + " triplets total for label: "
             + str(label)
             + "..."
         )
@@ -177,8 +234,10 @@ class SDFloader:
 
 def prepare_sdfloader(
     sdf_train_path: str,
+    leftovers_dir: str,
     nthreads: int,
-    num_examples_per_class: int,
+    triplets_per_class: int,
+    triplets_per_leftover: int,
     output_path: str,
     load_stack_size=100000,
 ) -> None:
@@ -193,9 +252,22 @@ def prepare_sdfloader(
     """
     with open(sdf_train_path, "rb") as f:
         sdf_train = pickle.load(f)
+    # @TODO get all leftover sequence ids
+    leftovers_sequence_ids = {}
+    for path in [os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)]:
+        ids = subprocess.check_output(f"seqkit seq -in < {path}", shell=True).decode(
+            "utf-8"
+        )
+        ids = ids.strip().split("\n")
+        leftovers_sequence_ids[
+            os.path.basename(path).removesuffix(".leftovers.fasta")
+        ] = ids
+
     sdfloader = SDFloader(
         sdf_train,
-        examples_per_class_limit=num_examples_per_class,
+        leftovers_sequence_ids=leftovers_sequence_ids,
+        triplets_per_class=triplets_per_class,
+        triplets_per_leftover=triplets_per_leftover,
         load_stack_size=load_stack_size,
         nthreads=nthreads,
     )

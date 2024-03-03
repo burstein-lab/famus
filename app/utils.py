@@ -1,5 +1,6 @@
 import shutil
 from datetime import datetime
+import subprocess
 
 import torch
 from tqdm import tqdm
@@ -7,6 +8,15 @@ from tqdm import tqdm
 from app import logger
 
 GIGABYTE = 1024**3
+
+
+def sample_sequences(input_file: str, output_file: str, sample_size: int) -> None:
+    """
+    Use seqkit to sample a file of sequences.
+    """
+    subprocess.run(
+        ["seqkit", "sample", "-n", str(sample_size), input_file, "-o", output_file]
+    )
 
 
 def _log_gpu_memory() -> None:

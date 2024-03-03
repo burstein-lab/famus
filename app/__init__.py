@@ -2,6 +2,7 @@ import logging
 import sys
 from datetime import datetime
 from functools import cache
+from types import TracebackType
 
 import yaml
 
@@ -21,7 +22,7 @@ def now() -> str:
 
 
 @cache
-def get_cfg():
+def get_cfg() -> dict:
     with open("cfg.yaml", "r") as fp:
         cfg = yaml.full_load(fp)
     return cfg
@@ -42,12 +43,13 @@ logger = logging.getLogger()
 logger.addHandler(logging.StreamHandler(sys.stderr))
 
 
-def handle_exception(exc_type, exc_value, exc_traceback):
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-
+def log_exception(
+    exc_type: type[BaseException],
+    exc_value: BaseException,
+    exc_traceback: TracebackType,
+) -> None:
     logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+    sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
 
-sys.excepthook = handle_exception
+sys.excepthook = log_exception

@@ -26,7 +26,6 @@ def _train_model(
     save_checkpoints=True,
     evaluation=True,
     continue_from_checkpoint: int | None = None,
-    
 ) -> VariableNet:
     """
     Train a model using a triplet loss function.
@@ -51,8 +50,12 @@ def _train_model(
     x_for_moving_avg = []
     x_for_moving_avg_eval = []
     x = 0
-    continue_from_checkpoint = continue_from_checkpoint if continue_from_checkpoint else 0
-    for epoch_num in tqdm(range(continue_from_checkpoint, num_epochs), ascii=True, desc="Epoch"):
+    continue_from_checkpoint = (
+        continue_from_checkpoint if continue_from_checkpoint else 0
+    )
+    for epoch_num in tqdm(
+        range(continue_from_checkpoint, num_epochs), ascii=True, desc="Epoch"
+    ):
         start_time = time.time()
         t_loss = 0
         batch_num = 1
@@ -60,6 +63,8 @@ def _train_model(
         batch: tuple
         for batch in sdfloader.triplet_batch_generator(batch_size=batch_size):
             x += 1
+            if save_checkpoints and x % 10_000 == 0:
+                torch.save(model, checkpoint_dir_path + str(x) + "_checkpoint.pt")
             if evaluation and batch_num % 10 == 0:
                 eval_round = True
                 logger.info("Evaluating model")
@@ -123,10 +128,9 @@ def _train_model(
         epoch_time = time.time() - start_time
         logger.info("Epoch: " + str(epoch_num) + " Epoch time: " + str(epoch_time))
         epoch_num += 1
-        if save_checkpoints:
-            torch.save(model, checkpoint_dir_path + str(epoch_num) + "_checkpoint.pt")
-        
+
     return model
+
 
 def load_latest_checkpoint(checkpoint_dir_path: str) -> VariableNet:
     files = os.listdir(checkpoint_dir_path)
@@ -136,7 +140,10 @@ def load_latest_checkpoint(checkpoint_dir_path: str) -> VariableNet:
         return None
     files = sorted(files, key=lambda x: int(x.split("_")[0]))
     latest_checkpoint = files[-1]
-    return torch.load(checkpoint_dir_path + latest_checkpoint), int(latest_checkpoint.split("_")[0])
+    return torch.load(checkpoint_dir_path + latest_checkpoint), int(
+        latest_checkpoint.split("_")[0]
+    )
+
 
 def train(
     sdfloader_path: str,
@@ -148,13 +155,29 @@ def train(
     checkpoint_dir_path=None,
     evaluation=True,
 ) -> None:
+    if save_checkpoints and not checkpoint_dir_path:
+        raise ValueError(
+            "Checkpoint dir path is required when save_checkpoints is True"
+        )
+    if checkpoint_dir_path:
+        if not os.path.exists(checkpoint_dir_path):
+            os.mkdir(checkpoint_dir_path)
+    output_dir_path = os.path.dirname(output_path)
+    if not os.path.exists(output_dir_path):
+        raise ValueError(f"Path {output_dir_path} does not exist")
+    if not isinstance(num_epochs, int):
+        raise ValueError("num_epochs must be an integer")
+    if not num_epochs > 0:
+        raise ValueError("num_epochs must be greater than 0")
+    if not isinstance(batch_size, int):
+        raise ValueError("batch_size must be an integer")
+    if not batch_size > 0:
+        raise ValueError("batch_size must be greater than 0")
+
     if device == "cuda":
-        if not torch.cuda.is_available(): 
+        if not torch.cuda.is_available():
             raise ValueError("Cuda is not available")
         device = torch.device("cuda")
-    
-    if save_checkpoints and not checkpoint_dir_path:
-        raise ValueError("Checkpoint dir path is required when save_checkpoints is True")
 
     with open(sdfloader_path, "rb") as f:
         sdfloader: SDFloader = pickle.load(f)
@@ -165,12 +188,12 @@ def train(
     logger.info("input size: " + str(input_size))
     continue_from_checkpoint = None
     if not checkpoint_dir_path:
-        snn_model = VariableNet(input_size, 2, 320)
+        snn_model = VariableNet(input_size, 3, 512)
         snn_model.to(device)
     else:
         result = load_latest_checkpoint(checkpoint_dir_path)
         if result is None:
-            snn_model = VariableNet(input_size, 2, 320)
+            snn_model = VariableNet(input_size, 3, 512)
             snn_model.to(device)
         else:
             snn_model, continue_from_checkpoint = result
@@ -190,6 +213,3 @@ def train(
         continue_from_checkpoint=continue_from_checkpoint,
     )
     torch.save(model, output_path)
-
-
-

@@ -1,13 +1,14 @@
 import argparse
 import os
-from math import inf
-import subprocess
+
+# from math import inf
+# import subprocess
 import yaml
 
 from app import data_preprocessing as dp
 from app import get_cfg, logger
 from app.sdfloader import prepare_sdfloader
-from app.utils import concatenate_files, now
+# from app.utils import concatenate_files, now
 
 
 def main(
@@ -35,7 +36,7 @@ def main(
     if not os.path.exists(input_fasta_dir_path):
         raise ValueError("Input fasta directory does not exist")
 
-    state_file_path = data_dir_path + ".training_preprocessing_state"
+    state_file_path = os.path.join(data_dir_path, ".training_preprocessing_state")
     number_of_sampled_sequences_per_subcluster = cfg[
         "number_of_sampled_sequences_per_subcluster"
     ]
@@ -92,7 +93,6 @@ def main(
             "rep_seq_dir": None,
             "augmented_subcluster_dir": None,
             "full_profile_dir": None,
-            "full_profile_db": None,
             "full_input_fasta": None,
             "hmmsearch_tmp_path": None,
             "full_hmmsearch_results": None,
@@ -119,14 +119,14 @@ def main(
         skip = True
 
     # create tmp directory
-    tmp_dir_path = data_dir_path + "tmp/"
+    tmp_dir_path = os.path.join(data_dir_path, "tmp/")
     os.makedirs(tmp_dir_path, exist_ok=True)
     # Create initial subclusters
     if not state["subcluster_dir"] or not state["rep_seq_dir"] or not skip:
         skip = False
-        subcluster_dir = data_dir_path + "subclusters/"
-        leftovers_dir = data_dir_path + "leftovers/"
-        rep_seq_dir = data_dir_path + "representative_sequences/"
+        subcluster_dir = os.path.join(data_dir_path, "subclusters/")
+        leftovers_dir = os.path.join(data_dir_path, "leftovers/")
+        rep_seq_dir = os.path.join(data_dir_path, "representative_sequences/")
         logger.info("Creating initial subclusters")
         dp.orthologs_to_subclusters(
             ortholog_fasta_dir=input_fasta_dir_path,
@@ -146,15 +146,16 @@ def main(
         leftovers_dir = state["leftovers_dir"]
         rep_seq_dir = state["rep_seq_dir"]
 
-    exit()
     # Augment subclusters
     if not state["augmented_subcluster_dir"] or not skip:
         skip = False
         logger.info("Augmenting subclusters")
-        augmented_subcluster_dir = data_dir_path + "augmented_subclusters/"
+        augmented_subcluster_dir = os.path.join(data_dir_path, "augmented_subclusters/")
         dp.augment_small_subclusters(
             subclusters_dir=subcluster_dir,
             output_dir=augmented_subcluster_dir,
+            tmp_dir=tmp_dir_path,
+            nthreads=nthreads,
         )
         state["augmented_subcluster_dir"] = augmented_subcluster_dir
         yaml.dump(state, open(state_file_path, "w+"))
@@ -163,9 +164,9 @@ def main(
         augmented_subcluster_dir = state["augmented_subcluster_dir"]
 
     # Create full profile database
-    if not state["full_profile_db"] or not skip:
+    if not state["full_profile_dir"] or not skip:
         skip = False
-        full_profile_dir = data_dir_path + "subcluster_profiles/"
+        full_profile_dir = os.path.join(data_dir_path, "subcluster_profiles/")
         logger.info("Creating full profiles")
         dp.create_subcluster_profiles(
             subcluster_dir=augmented_subcluster_dir,
@@ -182,70 +183,21 @@ def main(
     if not state["full_input_fasta"] or not skip:
         skip = False
         logger.info("Creating full input fasta")
-        full_hmmsearch_input = data_dir_path + "full_hmmsearch_input.fasta"
-        open(full_hmmsearch_input, "w+")
-        if isinstance(number_of_sampled_sequences_per_subcluster, int):
-            logger.info("sampling subclusters for model")
-            dp.sample_subclusters_for_model(
-                augmented_subcluster_dir,
-                output_sampled_subclusters_fasta_path=data_dir_path
-                + "sampled_subclusters.fasta",
-                min_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
-            )
-            os.system(
-                "cat "
-                + data_dir_path
-                + "sampled_subclusters.fasta >> "
-                + full_hmmsearch_input
-            )
-        else:
-            logger.info("using all subclusters for model")
-            concatenate_files(
-                files=[
-                    augmented_subcluster_dir + f
-                    for f in os.listdir(augmented_subcluster_dir)
-                ],
-                output=full_hmmsearch_input,
-                track_progress=False,
-            )
-        concatenate_files(
-            files=[input_fasta_dir_path + f for f in os.listdir(input_fasta_dir_path)],
-            output=data_dir_path + "all_sequneces.fasta",
-            track_progress=False,
+        full_hmmsearch_input = os.path.join(data_dir_path, "full_hmmsearch_input.fasta")
+        # sampled_sequences_output = data_dir_path + "sampled_sequences.fasta"
+        dp.prepare_full_hmmsearch_input(
+            data_dir_path=data_dir_path,
+            augmented_subcluster_dir=augmented_subcluster_dir,
+            leftovers_dir=leftovers_dir,
+            tmp_dir_path=tmp_dir_path,
+            input_unknown_sequences_fasta_path=unknown_sequences_fasta_path,
+            output_full_hmmsearch_input_path=full_hmmsearch_input,
+            number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
+            fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
         )
-        concatenate_files(
-            files=[rep_seq_dir + f for f in os.listdir(rep_seq_dir)],
-            output=data_dir_path + "rep_seq.fasta",
-            track_progress=False,
-        )
-        n_sampled_subcluster_sequences = int(
-            subprocess.check_output("grep -c '>' " + full_hmmsearch_input, shell=True)
-        )
-        if fraction_of_sampled_unknown_sequences == "use_all":
-            logger.info("using all unknown sequences for model")
-            os.system(
-                "cat " + unknown_sequences_fasta_path + " >> " + full_hmmsearch_input
-            )
-        elif not fraction_of_sampled_unknown_sequences == "do_not_use":
-            logger.info("sampling unknown sequences for model")
-            dp.sample_unknown_sequences_for_model(
-                input_unknown_sequences_fasta_path=unknown_sequences_fasta_path,
-                n_sequences=int(
-                    n_sampled_subcluster_sequences
-                    * fraction_of_sampled_unknown_sequences
-                ),
-                output_sampled_unknown_sequences_fasta_path=data_dir_path
-                + "sampled_unknown_sequences.fasta",
-            )
-            os.system(
-                "cat "
-                + data_dir_path
-                + "sampled_unknown_sequences.fasta >> "
-                + full_hmmsearch_input
-            )
-        else:
-            logger.info("not using unknown sequences for model")
+
         state["full_input_fasta"] = full_hmmsearch_input
+        # state["sampled_sequences_output"] = sampled_sequences_output
         yaml.dump(state, open(state_file_path, "w+"))
     else:
         logger.info("Using existing full input fasta")
@@ -253,10 +205,12 @@ def main(
 
     if not state["full_hmmsearch_results"] or not skip:
         logger.info("Running full hmmsearch")
-        full_hmmsearch_results = data_dir_path + "full_hmmsearch_results.txt"
+        full_hmmsearch_results = os.path.join(
+            data_dir_path, "full_hmmsearch_results.txt"
+        )
         if not (skip and state["hmmsearch_tmp_path"]):
-            hmmsearch_tmp_path = tmp_dir_path + "hmmsearch/"
-            os.mkdir(hmmsearch_tmp_path)
+            hmmsearch_tmp_path = os.path.join(data_dir_path, "hmmsearch/")
+            os.makedirs(hmmsearch_tmp_path, exist_ok=True)
             state["hmmsearch_tmp_path"] = hmmsearch_tmp_path
             yaml.dump(state, open(state_file_path, "w+"))
         else:
@@ -286,9 +240,15 @@ def main(
     ):
         skip = False
         logger.info("Splitting subclusters")
-        subcluster_split_fastas_dir = data_dir_path + "subcluster_split_fastas/"
-        subcluster_split_scoring_dir = data_dir_path + "subcluster_split_scoring/"
-        subcluster_split_md_path = data_dir_path + "split_subcluster_md.pkl"
+        subcluster_split_fastas_dir = os.path.join(
+            data_dir_path, "subcluster_split_fastas/"
+        )
+        subcluster_split_scoring_dir = os.path.join(
+            data_dir_path, "subcluster_split_scoring/"
+        )
+        subcluster_split_md_path = os.path.join(
+            data_dir_path, "split_subcluster_md.pkl"
+        )
         dp.randomly_split_subclusters(
             input_subclusters_fasta_dir_path=augmented_subcluster_dir,
             output_fasta_dir_for_profiles_path=subcluster_split_fastas_dir,
@@ -309,10 +269,13 @@ def main(
     if not state["subcluster_split_profiles_dir"] or not skip:
         skip = False
         logger.info("Creating split subcluster profiles")
-        subcluster_split_profiles_dir = data_dir_path + "subcluster_split_profiles/"
+        subcluster_split_profiles_dir = os.path.join(
+            data_dir_path, "subcluster_split_profiles/"
+        )
         dp.create_subcluster_profiles(
             subcluster_dir=subcluster_split_fastas_dir,
             profile_dir=subcluster_split_profiles_dir,
+            tmp_dir_path=tmp_dir_path,
             nthreads=nthreads,
         )
         state["subcluster_split_profiles_dir"] = subcluster_split_profiles_dir
@@ -322,15 +285,16 @@ def main(
         subcluster_split_profiles_dir = state["subcluster_split_profiles_dir"]
 
     if not state["split_hmmsearch_results"] or not skip:
-        split_hmmsearch_tmp_dir_path = tmp_dir_path + "split_hmmsearch/"
+        split_hmmsearch_tmp_dir_path = os.path.join(data_dir_path, "split_hmmsearch/")
         os.makedirs(split_hmmsearch_tmp_dir_path, exist_ok=True)
         logger.info("Running split hmmsearch")
         skip = False
-        split_hmmsearch_results_path = data_dir_path + "split_hmmsearch_results.txt"
+        split_hmmsearch_results_path = os.path.join(
+            data_dir_path, "split_hmmsearch_results.txt"
+        )
         dp.split_profiles_hmmsearch(
             input_split_profiles_dir_path=subcluster_split_profiles_dir,
             input_fasta_dir_for_scoring_path=subcluster_split_scoring_dir,
-            input_split_sequence_md_path=subcluster_split_md_path,
             output_split_hmmsearch_results_path=split_hmmsearch_results_path,
             tmp_path=split_hmmsearch_tmp_dir_path,
             nthreads=nthreads,
@@ -343,11 +307,11 @@ def main(
 
     if not state["ground_truth"] or not skip:
         logger.info("Creating ground truth")
-        ground_truth_path = data_dir_path + "ground_truth.pkl"
+        ground_truth_path = os.path.join(data_dir_path, "ground_truth.pkl")
         skip = False
         dp.generate_ground_truth(
             input_augmented_subclusters_fastas_dir_path=augmented_subcluster_dir,
-            input_fasta_dir_path=input_fasta_dir_path,
+            input_leftovers_dir_path=leftovers_dir,
             input_unannotated_sequences_fasta_path=unknown_sequences_fasta_path,
             output_ground_truth_path=ground_truth_path,
         )
@@ -359,7 +323,8 @@ def main(
 
     if not state["sdf_train"] or not skip:
         logger.info("Creating sparse dataframe for training")
-        sdf_train_path = data_dir_path + "sdf_train.pkl"
+
+        sdf_train_path = os.path.join(data_dir_path, "sdf_train.pkl")
         skip = False
         dp.hmmsearch_results_to_train_sdf(
             input_split_hmmsearch_results_path=split_hmmsearch_results_path,
@@ -379,11 +344,13 @@ def main(
     if not state["sdfloader"] or not skip:
         logger.info("Creating sdfloader")
         skip = False
-        sdfloader_path = data_dir_path + "sdfloader.pkl"
+        sdfloader_path = os.path.join(data_dir_path, "sdfloader.pkl")
         prepare_sdfloader(
             sdf_train_path=sdf_train_path,
+            leftovers_dir=leftovers_dir,
             nthreads=nthreads,
-            num_examples_per_class=3000,
+            triplets_per_class=3000,
+            triplets_per_leftover=10,
             output_path=sdfloader_path,
             load_stack_size=100000,
         )
