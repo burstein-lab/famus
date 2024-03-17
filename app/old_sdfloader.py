@@ -32,6 +32,7 @@ class SDFloader:
         load_stack_size=100000,
         nthreads=2,
     ):
+        assert nthreads > 1, "nthreads must be greater than 1"
         logger.info("Creating triplets")
         self.load_stack_min_len = load_stack_size
         indices = set(range(len(sdf)))
@@ -43,7 +44,7 @@ class SDFloader:
         }
         manager = mp.Manager()
         label_to_indices = manager.dict(label_to_indices)
-        pool = mp.Pool(nthreads)
+        pool = mp.Pool(nthreads - 1)
         labels = sdf.unique_labels()
 
         triplets = []
@@ -111,36 +112,50 @@ class SDFloader:
         del triplets
         logger.info("Created " + str(len(self.idx_load_stacks)) + " load stacks")
 
-    def triplet_batch_generator(self) -> Generator[torch.Tensor, None, None]:
+    def triplet_batch_generator(
+        self, batch_size=32
+    ) -> Generator[torch.Tensor, None, None]:
+        assert batch_size <= self.load_stack_min_len, (
+            "batch_size is too small, increase it to at least "
+            + str(self.load_stack_min_len)
+            + " or decrease load_stack_size"
+        )
         for stack_index, stack in enumerate(self.idx_load_stacks):
             stack = list(stack)
             triplets_start_index = self.stack_start_indices[stack_index]
-            triplets_end_index = (
-                self.stack_start_indices[stack_index + 1]
-                if stack_index + 1 < len(self.stack_start_indices)
-                else len(self.anchors)
+            total_curr_stack_iterations = int(
+                np.floor(self.triplets_per_stack[stack_index] / batch_size)
             )
             curr_tensor = torch.tensor(self.sdf.matrix[stack].todense())
             matrix_idx_to_tensor_idx = {idx: i for i, idx in enumerate(stack)}
-
-            anchor_ids = self.anchors[triplets_start_index:triplets_end_index]
-            positive_ids = self.positives[triplets_start_index:triplets_end_index]
-            negative_ids = self.negatives[triplets_start_index:triplets_end_index]
-            anchor_ids = [matrix_idx_to_tensor_idx[idx] for idx in anchor_ids]
-            positive_ids = [matrix_idx_to_tensor_idx[idx] for idx in positive_ids]
-            negative_ids = [matrix_idx_to_tensor_idx[idx] for idx in negative_ids]
-            for i in range(len(anchor_ids)):
+            for curr_stack_iteration in range(total_curr_stack_iterations):
+                s = triplets_start_index + curr_stack_iteration * batch_size
+                e = triplets_start_index + (curr_stack_iteration + 1) * batch_size
+                anchor_ids = self.anchors[s:e]
+                positive_ids = self.positives[s:e]
+                negative_ids = self.negatives[s:e]
+                anchor_ids = [matrix_idx_to_tensor_idx[idx] for idx in anchor_ids]
+                positive_ids = [matrix_idx_to_tensor_idx[idx] for idx in positive_ids]
+                negative_ids = [matrix_idx_to_tensor_idx[idx] for idx in negative_ids]
                 yield (
-                    curr_tensor[anchor_ids[i]],
-                    curr_tensor[positive_ids[i]],
-                    curr_tensor[negative_ids[i]],
+                    curr_tensor[anchor_ids],
+                    curr_tensor[positive_ids],
+                    curr_tensor[negative_ids],
                 )
 
-    def get_num_batches(self, batch_size: int) -> int:
-        num_batches = 0
-        for stack in self.triplets_per_stack:
-            num_batches += int(stack / batch_size)
-        return num_batches
+    def get_num_batches(self, batch_size: int):
+        """
+        Returns the number of batches that can be created from the triplets given the batch size.
+        The number of batches refers to the number of batches for the neural network, not the number of load stacks.
+        :param batch_size: size of the batch
+        :return: number of batches
+        """
+        if not isinstance(batch_size, int) and batch_size > 0:
+            raise ValueError("batch_size must be a positive integer")
+        return sum(
+            int(np.floor(self.triplets_per_stack[i] / batch_size))
+            for i in range(len(self.idx_load_stacks))
+        )
 
     @staticmethod
     def sample_triplets(

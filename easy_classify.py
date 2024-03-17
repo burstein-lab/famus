@@ -2,7 +2,6 @@ import argparse
 
 from app.classification import classify
 from app import get_cfg
-    
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from app import get_cfg
 from app.train import train
 
 if __name__ == "__main__":
+    cfg = get_cfg()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--sdfloader_path", type=str, required=True, help="[REQUIRED] Path to sdfloader"
@@ -29,6 +30,7 @@ if __name__ == "__main__":
     output_dir = args.output_dir
     if output_dir[-1] != "/":
         output_dir += "/"
+    num_workers = cfg["nthreads"]
     train(
         sdfloader_path=args.sdfloader_path,
         output_path=args.output_dir + "model.pt",
@@ -38,4 +40,5 @@ if __name__ == "__main__":
         save_checkpoints=True,
         checkpoint_dir_path=args.output_dir,
         evaluation=True,
+        num_workers=num_workers
     )

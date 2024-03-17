@@ -78,6 +78,7 @@ def main(
         raise ValueError(
             "unknown_sequences_fasta_path was not provided but fraction_of_sampled_unknown_sequences is not set to 'do_not_use'"
         )
+
     if not data_dir_path.endswith("/"):
         data_dir_path += "/"
 

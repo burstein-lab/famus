@@ -20,9 +20,9 @@ plt.rcParams["xtick.labelsize"] = 20
 
 output_path = "reg.png"
 
-kegg_fasta_path = "/davidb/bio_db/Kegg/2023-05-24/FAA/"
-subcluster_fastas_path = "data/kegg/data_dir/subclusters"
-all_sequences_path = "/davidb/bio_db/Kegg/2023-05-24/all_prok_euk_viruses.fasta"
+orthologs_fasta_path = "/davidb/guyshur/prepare_database_fasta_dirs/tigrfam_filtered_2/"
+subcluster_fastas_path = "data/tigrfam/subclusters/"
+all_sequences_path = "/davidb/bio_db/UniProt/UniRef90/2024-01-17/uniref90.fasta"
 
 if os.path.exists("ko_subcluster_size_distribution_data.pkl"):
     with open("ko_subcluster_size_distribution_data.pkl", "rb") as f:
@@ -37,16 +37,15 @@ if os.path.exists("ko_subcluster_size_distribution_data.pkl"):
             ko_to_ko_size,
         ) = pickle.load(f)
 else:
-    
     total_sequences = subprocess.check_output(["grep", "-c", ">", all_sequences_path])
     total_sequences = int(total_sequences.decode("utf-8").split()[0])
     # KO size distribution
     ko_list_files_paths = [
-        os.path.join(kegg_fasta_path, f)
-        for f in os.listdir(kegg_fasta_path)
+        os.path.join(orthologs_fasta_path, f)
+        for f in os.listdir(orthologs_fasta_path)
         if f.endswith(".list")
         and os.path.getsize(
-            os.path.join(kegg_fasta_path, f.removesuffix("list") + "faa")
+            os.path.join(orthologs_fasta_path, f.removesuffix("list") + "fasta")
         )
         > 0
     ]
@@ -113,10 +112,10 @@ print(f"Total KO sequences: {total_ko_sequences}")
 print(f"Total subcluster sequences: {total_sc_sequences}")
 sns.set_palette("pastel")
 palette = [
-        sns.color_palette()[0],
-        sns.color_palette()[1],
-        sns.color_palette()[2],
-    ]
+    sns.color_palette()[0],
+    sns.color_palette()[1],
+    sns.color_palette()[2],
+]
 sns.barplot(
     x=["Subclusrers only", "All labeled", "Total"],
     y=[total_sc_sequences, total_ko_sequences, total_sequences],
@@ -128,16 +127,8 @@ sns.barplot(
 ax.set_xticklabels(
     ["Subclusrers only", "All labeled", "Total"], rotation=30, ha="right"
 )
-ax.text(
-    x=-0.125,
-    y=1,
-    s='A',
-    fontsize=30,
-    ha='right',
-    va='top',
-    transform=ax.transAxes
-)
-    
+ax.text(x=-0.125, y=1, s="A", fontsize=30, ha="right", va="top", transform=ax.transAxes)
+
 
 num_ticks = total_sequences // 5000000 + 1
 y_ticks = np.arange(0, 5000000 * (num_ticks), 5000000)
@@ -154,8 +145,15 @@ for spine in ax.spines.values():
 ax2: plt.Axes = axes[1]
 log_n_lines_list_kos = np.log10(n_lines_list_kos)
 # make shade color same as outline color
-sns.kdeplot(x=log_n_lines_list_kos, ax=ax2, shade=True, color=palette[1],
-            linewidth=1, alpha=1, edgecolor="black")
+sns.kdeplot(
+    x=log_n_lines_list_kos,
+    ax=ax2,
+    shade=True,
+    color=palette[1],
+    linewidth=1,
+    alpha=1,
+    edgecolor="black",
+)
 x_max_rounded = int(log_n_lines_list_kos.max())
 # xticks = [1]
 # xticklables = ["$10^0$"]
@@ -192,13 +190,7 @@ ax2.grid(False)
 xticks = ax2.get_xticks()
 xticklabels = ax2.get_xticklabels()
 ax2.text(
-    x=-0.125,
-    y=1,
-    s='B',
-    fontsize=30,
-    ha='right',
-    va='top',
-    transform=ax2.transAxes
+    x=-0.125, y=1, s="B", fontsize=30, ha="right", va="top", transform=ax2.transAxes
 )
 plt.savefig("bar_and_ko_sizes.png", dpi=300, bbox_inches="tight")
 
