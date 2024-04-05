@@ -42,7 +42,7 @@ def main(
     ]
 
     fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
-
+    samples_profiles_product_limit = cfg["samples_profiles_product_limit"]
     if not (
         number_of_sampled_sequences_per_subcluster == "use_all"
         or (
@@ -77,6 +77,14 @@ def main(
     ):
         raise ValueError(
             "unknown_sequences_fasta_path was not provided but fraction_of_sampled_unknown_sequences is not set to 'do_not_use'"
+        )
+
+    if (
+        not isinstance(samples_profiles_product_limit, int)
+        or samples_profiles_product_limit < 1
+    ):
+        raise ValueError(
+            f"samples_profiles_product_limit must be a positive integer. got {samples_profiles_product_limit}"
         )
 
     if not data_dir_path.endswith("/"):
@@ -195,6 +203,7 @@ def main(
             output_full_hmmsearch_input_path=full_hmmsearch_input,
             number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
             fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
+            samples_profiles_product_limit=samples_profiles_product_limit,
         )
 
         state["full_input_fasta"] = full_hmmsearch_input

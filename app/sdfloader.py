@@ -29,18 +29,23 @@ class SDFloader:
         leftovers_sequence_ids: dict,  # @TODO: add preferential sampling for leftovers
         triplets_per_class=3000,
         triplets_per_leftover=10,
+        max_leftover_triplets=300,
         load_stack_size=100000,
         nthreads=2,
-    ):
+    ) -> None:
         logger.info("Creating triplets")
         self.load_stack_min_len = load_stack_size
-        indices = set(range(len(sdf)))
+        sdf_sample_indices = set(range(len(sdf)))
         label_to_indices = sdf.get_label_to_indices()
         index_ids_to_indices = {idx: i for i, idx in enumerate(sdf.index_ids)}
-        label_to_leftover_indices = {
-            label: [index_ids_to_indices[idx_id] for idx_id in idx_ids]
-            for label, idx_ids in leftovers_sequence_ids.items()
-        }
+        if leftovers_sequence_ids and triplets_per_leftover > 0:
+            label_to_leftover_indices = {
+                label: [index_ids_to_indices[idx_id] for idx_id in idx_ids]
+                for label, idx_ids in leftovers_sequence_ids.items()
+            }
+        else:
+            label_to_leftover_indices = {}
+
         manager = mp.Manager()
         label_to_indices = manager.dict(label_to_indices)
         pool = mp.Pool(nthreads)
@@ -61,10 +66,11 @@ class SDFloader:
                 (
                     label_to_indices,
                     label,
-                    indices,
+                    sdf_sample_indices,
                     leftover_indices,
                     triplets_per_class,
                     triplets_per_leftover,
+                    max_leftover_triplets,
                 )
             )
         triplets = pool.starmap(
@@ -111,36 +117,50 @@ class SDFloader:
         del triplets
         logger.info("Created " + str(len(self.idx_load_stacks)) + " load stacks")
 
-    def triplet_batch_generator(self) -> Generator[torch.Tensor, None, None]:
+    def triplet_batch_generator(
+        self, batch_size=32
+    ) -> Generator[torch.Tensor, None, None]:
+        assert batch_size <= self.load_stack_min_len, (
+            "batch_size is too small, increase it to at least "
+            + str(self.load_stack_min_len)
+            + " or decrease load_stack_size"
+        )
         for stack_index, stack in enumerate(self.idx_load_stacks):
             stack = list(stack)
             triplets_start_index = self.stack_start_indices[stack_index]
-            triplets_end_index = (
-                self.stack_start_indices[stack_index + 1]
-                if stack_index + 1 < len(self.stack_start_indices)
-                else len(self.anchors)
+            total_curr_stack_iterations = int(
+                np.floor(self.triplets_per_stack[stack_index] / batch_size)
             )
             curr_tensor = torch.tensor(self.sdf.matrix[stack].todense())
             matrix_idx_to_tensor_idx = {idx: i for i, idx in enumerate(stack)}
-
-            anchor_ids = self.anchors[triplets_start_index:triplets_end_index]
-            positive_ids = self.positives[triplets_start_index:triplets_end_index]
-            negative_ids = self.negatives[triplets_start_index:triplets_end_index]
-            anchor_ids = [matrix_idx_to_tensor_idx[idx] for idx in anchor_ids]
-            positive_ids = [matrix_idx_to_tensor_idx[idx] for idx in positive_ids]
-            negative_ids = [matrix_idx_to_tensor_idx[idx] for idx in negative_ids]
-            for i in range(len(anchor_ids)):
+            for curr_stack_iteration in range(total_curr_stack_iterations):
+                s = triplets_start_index + curr_stack_iteration * batch_size
+                e = triplets_start_index + (curr_stack_iteration + 1) * batch_size
+                anchor_ids = self.anchors[s:e]
+                positive_ids = self.positives[s:e]
+                negative_ids = self.negatives[s:e]
+                anchor_ids = [matrix_idx_to_tensor_idx[idx] for idx in anchor_ids]
+                positive_ids = [matrix_idx_to_tensor_idx[idx] for idx in positive_ids]
+                negative_ids = [matrix_idx_to_tensor_idx[idx] for idx in negative_ids]
                 yield (
-                    curr_tensor[anchor_ids[i]],
-                    curr_tensor[positive_ids[i]],
-                    curr_tensor[negative_ids[i]],
+                    curr_tensor[anchor_ids],
+                    curr_tensor[positive_ids],
+                    curr_tensor[negative_ids],
                 )
 
-    def get_num_batches(self, batch_size: int) -> int:
-        num_batches = 0
-        for stack in self.triplets_per_stack:
-            num_batches += int(stack / batch_size)
-        return num_batches
+    def get_num_batches(self, batch_size: int):
+        """
+        Returns the number of batches that can be created from the triplets given the batch size.
+        The number of batches refers to the number of batches for the neural network, not the number of load stacks.
+        :param batch_size: size of the batch
+        :return: number of batches
+        """
+        if not isinstance(batch_size, int) and batch_size > 0:
+            raise ValueError("batch_size must be a positive integer")
+        return sum(
+            int(np.floor(self.triplets_per_stack[i] / batch_size))
+            for i in range(len(self.idx_load_stacks))
+        )
 
     @staticmethod
     def sample_triplets(
@@ -150,6 +170,7 @@ class SDFloader:
         leftovers_sequence_indices: list,
         num_triplets: int,
         num_triplets_per_leftover: int,
+        max_leftover_triplets: int,
     ) -> list:
         """
         Creates triplets for a given label. The triplets are created in a way that the anchor and positive samples are
@@ -171,13 +192,19 @@ class SDFloader:
             ancors = np.array(
                 list(leftovers_sequence_indices) * num_triplets_per_leftover
             )
+            if len(ancors) > max_leftover_triplets:
+                ancors = np.random.choice(
+                    a=ancors, size=max_leftover_triplets, replace=False
+                )
             positives = np.random.choice(
                 a=indices,
-                size=num_triplets_per_leftover * len(leftovers_sequence_indices),
+                size=len(ancors),
+                replace=True,
             )
             negatives = np.random.choice(
                 a=other_indices,
-                size=num_triplets_per_leftover * len(leftovers_sequence_indices),
+                size=len(ancors),
+                replace=True,
             )
             for ancor_idx, positive_idx, negative_idx in zip(
                 ancors, positives, negatives
@@ -188,7 +215,7 @@ class SDFloader:
             logger.info(
                 "Created "
                 + str(len(triplets))
-                + "leftover triplets for label: "
+                + " leftover triplets for label: "
                 + str(label)
                 + "..."
             )
@@ -237,16 +264,18 @@ def prepare_sdfloader(
     """
     with open(sdf_train_path, "rb") as f:
         sdf_train = pickle.load(f)
-    # @TODO get all leftover sequence ids
     leftovers_sequence_ids = {}
-    for path in [os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)]:
-        ids = subprocess.check_output(f"seqkit seq -in < {path}", shell=True).decode(
-            "utf-8"
-        )
-        ids = ids.strip().split("\n")
-        leftovers_sequence_ids[
-            os.path.basename(path).removesuffix(".leftovers.fasta")
-        ] = ids
+    if leftovers_dir and triplets_per_leftover > 0:
+        for path in [os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)]:
+            ids = subprocess.check_output(
+                f"seqkit seq -in < {path}", shell=True
+            ).decode("utf-8")
+            ids = ids.strip().split("\n")
+            leftovers_sequence_ids[
+                os.path.basename(path).removesuffix(".leftovers.fasta")
+            ] = ids
+
+    # logger.info(f"TO DELETE::: Leftover ids example: {str(ids)}")
 
     sdfloader = SDFloader(
         sdf_train,
@@ -256,5 +285,45 @@ def prepare_sdfloader(
         load_stack_size=load_stack_size,
         nthreads=nthreads,
     )
+
+    # sdf_train = pickle.load(
+    #     open(
+    #         "data/kegg_2021_coverage_0.8/sdf_train.pkl",
+    #         "rb",
+    #     )
+    # )
+
+    # sdfloader = pickle.load(
+    #     open(
+    #         "/sternadi/nobackup/volume1/guy_shur/kegg_2021_coverage_0.8_sdfloader.pkl",
+    #         "rb",
+    #     )
+    # )
+
+    # import random
+
+    # c = 0
+    # for a, p, n in sdfloader.triplet_batch_generator():
+    #     a, p, n = a[0], p[0], n[0]
+    #     if random.random() > 0.95:
+    #         a_p_corr = np.corrcoef(a, p)[0][1]
+    #         a_n_corr = np.corrcoef(a, n)[0][1]
+    #         logger.info(f"Correlation between anchor and positive: {a_p_corr}")
+    #         logger.info(f"Correlation between anchor and negative: {a_n_corr}")
+
+    # for a, p, n in zip(sdfloader.anchors, sdfloader.positives, sdfloader.negatives):
+    #     if random.random() > 0.95:
+    #         a_idx, p_idx, n_idx = (
+    #             sdf_train.index_ids[a],
+    #             sdf_train.index_ids[p],
+    #             sdf_train.index_ids[n],
+    #         )
+    #         a_labels = sdf_train.labels[a_idx]
+    #         p_labels = sdf_train.labels[p_idx]
+    #         n_labels = sdf_train.labels[n_idx]
+    #         logger.info(f"Anchor labels: {a_labels}")
+    #         logger.info(f"Positive labels: {p_labels}")
+    #         logger.info(f"Negative labels: {n_labels}")
+
     with open(output_path, "wb+") as f:
         pickle.dump(sdfloader, f)

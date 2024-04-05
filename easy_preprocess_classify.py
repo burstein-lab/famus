@@ -64,36 +64,38 @@ def main(
         skip = True
 
     if not state["full_hmmsearch_results"] or not skip:
-        logger.info("Running hmmsearch")
-        full_hmmsearch_results_path = data_dir_path + "full_hmmsearch_results.tsv"
+        logger.info("Running full hmmsearch")
+        full_hmmsearch_results = os.path.join(
+            data_dir_path, "full_hmmsearch_results.txt"
+        )
         if not (skip and state["hmmsearch_tmp_path"]):
-            hmmsearch_tmp_path = "tmp_" + now() + "/"
-            os.mkdir(hmmsearch_tmp_path)
+            hmmsearch_tmp_path = os.path.join(data_dir_path, "hmmsearch/")
+            os.makedirs(hmmsearch_tmp_path, exist_ok=True)
             state["hmmsearch_tmp_path"] = hmmsearch_tmp_path
             yaml.dump(state, open(state_file_path, "w+"))
         else:
             hmmsearch_tmp_path = state["hmmsearch_tmp_path"]
+
         dp.full_hmmsearch(
             input_full_profiles_dir_path=input_full_profiles_dir_path,
             input_fasta_path=input_fasta_file_path,
-            output_full_hmmsearch_results_path=full_hmmsearch_results_path,
+            output_full_hmmsearch_results_path=full_hmmsearch_results,
             tmp_dir_path=hmmsearch_tmp_path,
             n_processes=nthreads,
         )
-        state["full_hmmsearch_results"] = full_hmmsearch_results_path
-        with open(state_file_path, "w+") as f:
-            yaml.dump(state, f)
+        state["full_hmmsearch_results"] = full_hmmsearch_results
+        yaml.dump(state, open(state_file_path, "w+"))
         skip = False
     else:
-        logger.info("Skipping hmmsearch")
-        full_hmmsearch_results_path = state["full_hmmsearch_results"]
+        logger.info("Using existing full hmmsearch results")
+        full_hmmsearch_results = state["full_hmmsearch_results"]
 
     if not state["sdf_classify"] or not skip:
         logger.info("Running sdf_classify")
         skip = False
         sdf_classify_path = data_dir_path + "sdf_classify.pkl"
         dp.hmmsearch_results_to_classification_sdf(
-            input_hmmsearch_results_path=full_hmmsearch_results_path,
+            input_hmmsearch_results_path=full_hmmsearch_results,
             input_train_sdf_path=input_sdf_train_path,
             input_fasta_path=input_fasta_file_path,
             output_path=sdf_classify_path,

@@ -1,5 +1,4 @@
 import pickle
-import math
 import time
 from typing import Any
 import os
@@ -9,15 +8,10 @@ import numpy as np
 import torch
 from torch import optim
 from torch.nn import TripletMarginLoss
-from torch.utils.data import DataLoader
-from torch.autograd import detect_anomaly, set_detect_anomaly
-from tqdm import tqdm
 
 from app import logger
 from app.model import VariableNet
-from app.dataset import IterableTripletDataset
 from app.sdfloader import SDFloader
-from app import get_cfg
 
 
 def _train_model(
@@ -30,7 +24,6 @@ def _train_model(
     batch_size=32,
     save_checkpoints=True,
     evaluation=True,
-    num_workers=4,
 ) -> VariableNet:
     """
     Train a model using a triplet loss function.
@@ -45,42 +38,8 @@ def _train_model(
     """
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     model.train()
-    dataset = IterableTripletDataset(sdfloader)
-    dataset.start = 0
-    dataset.end = len(sdfloader.anchors) - 1
-    total_batches = dataset.get_num_batches(batch_size)
-
-    def worker_init_fn(worker_id):
-        worker_info = torch.utils.data.get_worker_info()
-        dataset = worker_info.dataset
-        overall_start = dataset.start
-        overall_end = dataset.end
-        per_worker = int(
-            math.ceil((overall_end - overall_start) / float(worker_info.num_workers))
-        )
-        worker_id = worker_info.id
-        dataset.start = overall_start + worker_id * per_worker
-        dataset.end = min(dataset.start + per_worker, overall_end)
-
-    if device == "cpu":
-        torch.set_num_threads(num_workers)
-        num_workers = 0
-        dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=False,
-            drop_last=True,
-        )
-    else:
-        dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=False,
-            drop_last=True,
-            worker_init_fn=worker_init_fn,
-        )
+    total_batches = sdfloader.get_num_batches(batch_size) * num_epochs
+    total_batches = sdfloader.get_num_batches(batch_size)
     last_k_losses = []
     moving_avg_losses = []
     last_k_eval_losses = []
@@ -90,17 +49,13 @@ def _train_model(
     x_for_moving_avg_eval = []
     x = 0
 
-    logger.info("Setting detect_anomaly")
-    set_detect_anomaly(True)
-
-    for epoch_num in tqdm(range(num_epochs), ascii=True, desc="Epoch"):
+    for epoch_num in range(num_epochs):
         start_time = time.time()
         t_loss = 0
         batch_num = 1
         last_time = time.time()
         batch: tuple
-
-        for batch in dataloader:
+        for batch in sdfloader.triplet_batch_generator(batch_size=batch_size):
             x += 1
             if save_checkpoints and x % 10_000 == 0:
                 torch.save(model, checkpoint_dir_path + str(x) + "_checkpoint.pt")
@@ -109,18 +64,12 @@ def _train_model(
                 logger.info("Evaluating model")
             else:
                 eval_round = False
-            batch = [
-                batch[0].float(),
-                batch[1].float(),
-                batch[2].float(),
-            ]
             if not device == "cpu":
                 batch = (
-                    batch[0].to(device),
-                    batch[1].to(device),
-                    batch[2].to(device),
+                    batch[0].float().to(device),
+                    batch[1].float().to(device),
+                    batch[2].float().to(device),
                 )
-
             if eval_round:
                 model.eval()
                 with torch.no_grad():
@@ -128,40 +77,12 @@ def _train_model(
                 model.train()
             else:
                 preds = model(batch)
-            ancor_preds, positive_preds, negative_preds = (
-                preds[0],
-                preds[1],
-                preds[2],
-            )
-
+            ancor_preds, positive_preds, negative_preds = preds[0], preds[1], preds[2]
             loss = triplet_loss_module(ancor_preds, positive_preds, negative_preds)
-
             if not eval_round:
                 t_loss += loss.item()
                 optimizer.zero_grad()
-                logger.info("Loss: " + str(loss.item()))
-                try:
-                    loss.backward()
-                except RuntimeError as e:
-                    logger.info(
-                        "Error in loss backward. Loss: "
-                        + str(loss.item())
-                        + " Error: "
-                        + str(e)
-                    )
-
-                    batch_str = "Batch: "
-                    for b in batch:
-                        batch_str += str(b)
-                        batch_str += "\n====\n"
-                    grad_str = "Gradients: "
-                    for p in model.parameters():
-                        grad_str += str(p.grad)
-                        grad_str += "\n====\n"
-                    logger.info(batch_str)
-                    logger.info(grad_str)
-
-                    # exit(1)
+                loss.backward()
                 optimizer.step()
                 last_k_losses.append(loss.item())
                 if len(last_k_losses) >= 1000:
@@ -225,7 +146,6 @@ def train(
     save_checkpoints=False,
     checkpoint_dir_path=None,
     evaluation=True,
-    num_workers=4,
 ) -> None:
     if save_checkpoints and not checkpoint_dir_path:
         raise ValueError(
@@ -259,15 +179,15 @@ def train(
     input_size = sdfloader.sdf.matrix.shape[1]
     logger.info("input size: " + str(input_size))
     if not checkpoint_dir_path:
-        snn_model = VariableNet(input_size, 2, 320).to(torch.float32)
+        snn_model = VariableNet(input_size, 2, 320)
         snn_model.to(device)
     else:
         result = load_latest_checkpoint(checkpoint_dir_path)
         if result is None:
-            snn_model = VariableNet(input_size, 2, 320).to(torch.float32)
+            snn_model = VariableNet(input_size, 2, 320)
             snn_model.to(device)
         else:
-            snn_model = result
+            snn_model, result
     logger.info("Starting to train on device: " + str(device))
     loss = TripletMarginLoss(margin=1, p=2)
     logger.info("Training model")
@@ -281,6 +201,5 @@ def train(
         evaluation=evaluation,
         save_checkpoints=save_checkpoints,
         checkpoint_dir_path=checkpoint_dir_path,
-        num_workers=num_workers,
     )
     torch.save(model, output_path)

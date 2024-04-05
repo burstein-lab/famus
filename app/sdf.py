@@ -33,7 +33,7 @@ class SparseDataFrame(object):
         labels: dict | None = None,
         column_names: Iterable | None = None,
         dtype=np.float32,
-    ):
+    ) -> None:
         """
         SparseDataFrame constructor.
         :param matrix: A scipy.sparse.csr_matrix or scipy.sparse.csc_matrix
@@ -93,7 +93,10 @@ class SparseDataFrame(object):
         self.dtype = dtype
         self.matrix = matrix
         self.index_ids = np.array(index_ids)
-        self.labels = {k: np.array(v) for k, v in labels.items()}
+        if labels:
+            self.labels = {k: np.array(v) for k, v in labels.items()}
+        else:
+            self.labels = None
         self.column_names = np.array(column_names) if column_names is not None else None
 
     def __len__(self):
@@ -205,8 +208,8 @@ class SparseDataFrame(object):
         new_labels = {}
         labels = np.array(labels)
         for index_id, label_list in self.labels.items():
-            remaining = np.setdiff1d(label_list, labels)
-            if remaining:
+            remaining = np.intersect1d(label_list, labels)
+            if len(remaining) > 0:
                 new_labels[index_id] = remaining
         index_ids = set(new_labels.keys())
         mask = [idx in index_ids for idx in self.index_ids]

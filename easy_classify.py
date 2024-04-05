@@ -1,7 +1,7 @@
 import argparse
 
-from app.classification import classify
-from app import get_cfg
+from src.app.classification import classify
+from src.app import get_cfg
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # Content: Configuration file for the clustering, training and classification pipelines
 # See README.md for more information
 nthreads: 64
-user_device: 'cpu' # 'cpu' or torch device e.g 'cuda'
+user_device: 'cuda' # 'cpu' or torch device e.g 'cuda'
 threshold: 'bootstrap' # 'bootstrap' or positive float
 chunksize: 20000
 
@@ -10,3 +10,4 @@ chunksize: 20000
 threads_per_mmseqs_job: 4
 number_of_sampled_sequences_per_subcluster: 75 # 'use_all' or int
 fraction_of_sampled_unknown_sequences: 1.0 # 'use_all', float, or 'do_not_use'
+samples_profiles_product_limit: 150_000_000_000 # int
