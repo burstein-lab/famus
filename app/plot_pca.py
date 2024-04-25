@@ -62,7 +62,7 @@ labels = [
     "Aspartyl-tRNA synthetase",
 ]
 
-map = dict(zip(kos, labels))
+ko_to_label = dict(zip(kos, labels))
 
 colors = [
     "red",
@@ -77,14 +77,21 @@ colors = [
     "cyan",
 ]
 
-sdf_train_path = "data/kegg/data_dir/sdf_train.pkl"
-model_path = "tmp/latest_checkpoint.pt"
+print("Started")
+
+sdf_train_path = "data/kegg_2021_coverage_0.8/sdf_train.pkl"
+model_path = "tmp/model.pt"
 logger.info("Loading model")
 model = load_model(model_path)
 sdf_train: SparseDataFrame = load_data(sdf_train_path)
 sdf_train = sdf_train.select_by_labels(kos)
 
-sdf_train.labels = np.array([map[k] for k in sdf_train.labels])
+
+assert all(any(l in set(kos) for l in labels) for labels in sdf_train.labels.values())
+
+
+sdf_train.labels = np.array([sdf_train.labels[k][0] for k in sdf_train.index_ids])
+sdf_train.labels = np.array([ko_to_label[k] for k in sdf_train.labels])
 
 # ============================== PCA ==============================
 
@@ -123,35 +130,35 @@ axes[0, 0].annotate(
 )
 
 # l2 normalize raw data
-norm_data = raw_data / np.linalg.norm(raw_data, axis=1)[:, None]
-pca = PCA(n_components=2)
-pca.fit(norm_data)
-pca_norm = pca.transform(norm_data)
-sns.scatterplot(
-    x=pca_norm[:, 0],
-    y=pca_norm[:, 1],
-    hue=sdf_train.labels,
-    palette=colors,
-    ax=axes[0, 1],
-    legend=False,
-    alpha=0.5,
-)
+# norm_data = raw_data / np.linalg.norm(raw_data, axis=1)[:, None]
+# pca = PCA(n_components=2)
+# pca.fit(norm_data)
+# pca_norm = pca.transform(norm_data)
+# sns.scatterplot(
+#     x=pca_norm[:, 0],
+#     y=pca_norm[:, 1],
+#     hue=sdf_train.labels,
+#     palette=colors,
+#     ax=axes[0, 1],
+#     legend=False,
+#     alpha=0.5,
+# )
 
-axes[0, 1].set_xlabel("PC1", fontsize=20)
-axes[0, 1].set_ylabel("PC2", fontsize=20)
-axes[0, 1].grid(False)
-for spine in axes[0, 1].spines.values():
-    spine.set_visible(True)
-    spine.set_linewidth(1)
-    spine.set_color("black")
-axes[0, 1].annotate(
-    "B",
-    xy=(-0.2, 0.9),
-    xycoords="axes fraction",
-    fontsize=16,
-    horizontalalignment="left",
-    verticalalignment="bottom",
-)
+# axes[0, 1].set_xlabel("PC1", fontsize=20)
+# axes[0, 1].set_ylabel("PC2", fontsize=20)
+# axes[0, 1].grid(False)
+# for spine in axes[0, 1].spines.values():
+#     spine.set_visible(True)
+#     spine.set_linewidth(1)
+#     spine.set_color("black")
+# axes[0, 1].annotate(
+#     "B",
+#     xy=(-0.2, 0.9),
+#     xycoords="axes fraction",
+#     fontsize=16,
+#     horizontalalignment="left",
+#     verticalalignment="bottom",
+# )
 
 
 logger.info("Calculating embeddings")
@@ -210,7 +217,7 @@ plt.legend(
 plt.subplots_adjust(wspace=0.3)
 plt.savefig("pca.png", dpi=300, bbox_inches="tight")
 
-
+exit()
 # ============================== t-SNE ==============================
 fig, axes = plt.subplots(2, 2, figsize=(8, 8))
 

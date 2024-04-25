@@ -10,8 +10,9 @@ from torch import optim
 from torch.nn import TripletMarginLoss
 
 from app import logger
-from app.model import VariableNet
+from app.model import VariableNet, FamusNet, FamusNetTwo
 from app.sdfloader import SDFloader
+from torch.optim.lr_scheduler import StepLR
 
 
 def _train_model(
@@ -36,10 +37,11 @@ def _train_model(
     :param evaluation: Whether to evaluate the model every 10th batch.
     :return: The trained model.
     """
-    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr=0.005, momentum=0.9)
+
     model.train()
-    total_batches = sdfloader.get_num_batches(batch_size) * num_epochs
     total_batches = sdfloader.get_num_batches(batch_size)
+    opt_step = 0.005 / (total_batches * num_epochs)
     last_k_losses = []
     moving_avg_losses = []
     last_k_eval_losses = []
@@ -71,6 +73,8 @@ def _train_model(
                     batch[2].float().to(device),
                 )
             if eval_round:
+                for g in optimizer.param_groups:
+                    g["lr"] = max(g["lr"] - opt_step, 0.0001)
                 model.eval()
                 with torch.no_grad():
                     preds = model(batch)
@@ -115,6 +119,10 @@ def _train_model(
                 msg += " Moving average loss: " + str(moving_avg_loss)
             if len(last_k_eval_losses) >= 1000:
                 msg += " Moving average eval loss: " + str(moving_avg_eval_loss)
+            if eval_round:
+                msg += " optimizer learning rates: " + str(
+                    [g["lr"] for g in optimizer.param_groups]
+                )
             logger.info(msg)
             batch_num += 1
             last_time = time.time()
@@ -180,11 +188,13 @@ def train(
     logger.info("input size: " + str(input_size))
     if not checkpoint_dir_path:
         snn_model = VariableNet(input_size, 2, 320)
+        # snn_model = FamusNetTwo(input_size)
         snn_model.to(device)
     else:
         result = load_latest_checkpoint(checkpoint_dir_path)
         if result is None:
             snn_model = VariableNet(input_size, 2, 320)
+            # snn_model = FamusNetTwo(input_size)
             snn_model.to(device)
         else:
             snn_model, result

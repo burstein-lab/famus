@@ -7,6 +7,84 @@ from torch import nn
 torch.set_default_dtype(torch.float)
 
 
+class FamusNetTwo(nn.Module):
+    def __init__(self, input_size):
+        super(FamusNetTwo, self).__init__()
+        self.act = nn.SiLU()
+
+        self.layers = nn.Sequential()
+        self.layers.add_module("fc0", nn.Linear(input_size, 4096))
+        self.layers.add_module("act1", self.act)
+        self.layers.add_module("fc1", nn.Linear(4096, 1024))
+        self.layers.add_module("act2", self.act)
+        self.layers.add_module("fc2", nn.Linear(1024, 512))
+        self.layers.add_module("act3", self.act)
+        self.layers.add_module("fc3", nn.Linear(512, 320))
+
+    def forward_once(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of a single tensor.
+        Can be used after training to get the embedding of a tensor.
+        :param x: A tensor.
+        :return: The embedding of the tensor.
+        """
+        x = self.layers(x)
+        x = torch.nn.functional.normalize(x, p=2, dim=1)
+        return x
+
+    def forward(
+        self, triplet: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of a triplet.
+        :param triplet: A tuple of (ancor, positive, negative) tensors.
+        :return: A tuple of (ancor, positive, negative) embeddings.
+        """
+        ancor, positive, negative = triplet[0], triplet[1], triplet[2]
+        output1 = self.forward_once(ancor)
+        output2 = self.forward_once(positive)
+        output3 = self.forward_once(negative)
+        return output1, output2, output3
+
+
+class FamusNet(nn.Module):
+    def __init__(self, input_size):
+        super(FamusNet, self).__init__()
+        self.act = nn.SiLU()
+
+        self.layers = nn.Sequential()
+        self.layers.add_module("fc0", nn.Linear(input_size, 4096))
+        self.layers.add_module("act1", self.act)
+        self.layers.add_module("fc1", nn.Linear(4096, 1000))
+        self.layers.add_module("act2", self.act)
+        self.layers.add_module("fc2", nn.Linear(1000, 1000))
+
+    def forward_once(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of a single tensor.
+        Can be used after training to get the embedding of a tensor.
+        :param x: A tensor.
+        :return: The embedding of the tensor.
+        """
+        x = self.layers(x)
+        x = torch.nn.functional.normalize(x, p=2, dim=1)
+        return x
+
+    def forward(
+        self, triplet: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of a triplet.
+        :param triplet: A tuple of (ancor, positive, negative) tensors.
+        :return: A tuple of (ancor, positive, negative) embeddings.
+        """
+        ancor, positive, negative = triplet[0], triplet[1], triplet[2]
+        output1 = self.forward_once(ancor)
+        output2 = self.forward_once(positive)
+        output3 = self.forward_once(negative)
+        return output1, output2, output3
+
+
 class VariableNet(nn.Module):
     """A variable number of layers, with a fixed embedding size.
     The input size is the size of the input vector, and the embedding size is the size of the output vector.
@@ -56,7 +134,7 @@ class VariableNet(nn.Module):
         return output1, output2, output3
 
 
-def get_embeddings(model: VariableNet, arr: np.ndarray) -> np.ndarray:
+def get_embeddings(model: VariableNet | FamusNet, arr: np.ndarray) -> np.ndarray:
     """
     Get the embeddings of an array of tensors.
     :param model: The model to use.

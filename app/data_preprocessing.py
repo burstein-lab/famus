@@ -230,26 +230,51 @@ def prepare_full_hmmsearch_input(
         )
     number_of_profiles = len(labeled_ids_per_cluster)
     hmmsearch_load_size = total_sampled_sequences * number_of_profiles
-    number_of_sampled_sequences_per_leftover = None  # default (sample all leftovers)
+    total_number_of_leftover_seqs = sum([len(ids) for ids in labeled_ids_per_leftover])
+    number_of_sampled_sequences_per_leftover = (
+        None if total_number_of_leftover_seqs > 0 else 0
+    )
     # adjust the total number of sequences to be sampled if the product of the number of sampled sequences and the number of profiles is greater than the limit
     if hmmsearch_load_size > samples_profiles_product_limit:
         logger.warning(
             f"the product of the number of sampled sequences and the number of profiles is {hmmsearch_load_size}, which is greater than the limit of {samples_profiles_product_limit}. Automatically choosing sample sizes."
         )
         sampled_sequences_limit = samples_profiles_product_limit // number_of_profiles
-        total_sampled_subcluster_sequences = sampled_sequences_limit * 0.75
+        total_number_of_subcluster_seqs = sum(
+            [len(ids) for ids in labeled_ids_per_cluster]
+        )
+        total_number_of_leftover_seqs = sum(
+            [len(ids) for ids in labeled_ids_per_leftover]
+        )
+
+        total_sampled_leftover_sequences = min(
+            total_number_of_leftover_seqs, sampled_sequences_limit * 0.25
+        )
+        number_of_sampled_sequences_per_leftover = int(
+            total_sampled_leftover_sequences // number_of_profiles
+        )
+
+        total_sampled_subcluster_sequences = min(
+            total_number_of_subcluster_seqs,
+            sampled_sequences_limit - total_sampled_leftover_sequences,
+        )
         number_of_sampled_sequences_per_subcluster = int(
             total_sampled_subcluster_sequences // number_of_profiles
         )
         if number_of_sampled_sequences_per_subcluster < 6:
             number_of_sampled_sequences_per_subcluster = 6
-        total_sampled_leftover_sequences = sampled_sequences_limit * 0.25
-        number_of_sampled_sequences_per_leftover = int(
-            total_sampled_leftover_sequences // number_of_profiles
-        )
 
-        if number_of_sampled_sequences_per_leftover < 2:
+        if (
+            number_of_sampled_sequences_per_leftover < 2
+            and number_of_sampled_sequences_per_leftover > 0
+        ):
             number_of_sampled_sequences_per_leftover = 2
+        logger.info(
+            f"number of sampled sequences per subcluster: {number_of_sampled_sequences_per_subcluster}"
+        )
+        logger.info(
+            f"number of sampled sequences per leftover: {number_of_sampled_sequences_per_leftover}"
+        )
 
     sampled_subclusters_fasta_path = os.path.join(
         data_dir_path, "sampled_subclusters.fasta"
@@ -286,35 +311,50 @@ def prepare_full_hmmsearch_input(
     sampled_leftovers_fasta_path = os.path.join(
         data_dir_path, "sampled_leftovers.fasta"
     )
-    if number_of_sampled_sequences_per_leftover:
-        logger.info("sampling leftovers for model")
-        sample_subclusters_for_model(
-            leftovers_dir,
-            output_sampled_subclusters_fasta_path=sampled_leftovers_fasta_path,
-            number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_leftover,
+    if number_of_sampled_sequences_per_leftover is None or (
+        isinstance(number_of_sampled_sequences_per_leftover, int)
+        and number_of_sampled_sequences_per_leftover > 0
+    ):
+        if (
+            isinstance(number_of_sampled_sequences_per_leftover, int)
+            and number_of_sampled_sequences_per_leftover > 0
+        ):
+            logger.info("sampling leftovers for model")
+            sample_subclusters_for_model(
+                leftovers_dir,
+                output_sampled_subclusters_fasta_path=sampled_leftovers_fasta_path,
+                number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_leftover,
+            )
+
+        else:
+            logger.info("using all leftovers for model")
+
+            concatenate_files(
+                files=[
+                    os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)
+                ],
+                output=sampled_leftovers_fasta_path,
+                track_progress=False,
+            )
+        os.system(
+            "cat "
+            + sampled_leftovers_fasta_path
+            + " >> "
+            + output_full_hmmsearch_input_path
         )
 
+        n_leftover_sequences = int(
+            subprocess.check_output(
+                "grep -c '>' " + sampled_leftovers_fasta_path, shell=True
+            )
+        )
+    elif number_of_sampled_sequences_per_leftover == 0:
+        logger.info("not using leftovers for model")
+        n_leftover_sequences = 0
     else:
-        logger.info("using all leftovers for model")
-
-        concatenate_files(
-            files=[os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)],
-            output=sampled_leftovers_fasta_path,
-            track_progress=False,
+        raise ValueError(
+            f"number_of_sampled_sequences_per_leftover must be a nonnegative integer or None, not {number_of_sampled_sequences_per_leftover}"
         )
-    os.system(
-        "cat "
-        + sampled_leftovers_fasta_path
-        + " >> "
-        + output_full_hmmsearch_input_path
-    )
-
-    n_leftover_sequences = int(
-        subprocess.check_output(
-            "grep -c '>' " + sampled_leftovers_fasta_path, shell=True
-        )
-    )
-
     n_total_sequences = n_sampled_subcluster_sequences + n_leftover_sequences
 
     if fraction_of_sampled_unknown_sequences == "use_all":
@@ -336,7 +376,7 @@ def prepare_full_hmmsearch_input(
             input_unknown_sequences_fasta_path=input_unknown_sequences_fasta_path,
             n_sequences=int(n_total_sequences * fraction_of_sampled_unknown_sequences),
             tmp_dir_path=tmp_dir_path,
-            output_sampled_unknown_sequences_fasta_path=sampled_unknown_sequences_fasta_path
+            output_sampled_unknown_sequences_fasta_path=sampled_unknown_sequences_fasta_path,
         )
         os.system(
             "cat "
@@ -346,7 +386,7 @@ def prepare_full_hmmsearch_input(
         )
 
 
-def hmsearch_results_to_train_sdf(
+def hmmsearch_results_to_train_sdf(
     input_split_hmmsearch_results_path: str,
     input_split_subcluster_md_path: str,
     input_full_hmmsearch_results_path: str,
@@ -417,6 +457,7 @@ def hmsearch_results_to_train_sdf(
             sparse_dict[(seq_id, full_subcluster)] = int(float(score))
 
         else:
+            continue
             raise ValueError(
                 f"Sequence {seq_id} was scored on the wrong profile {profile_id}"
             )
@@ -972,12 +1013,17 @@ def _hmmsearch_single_profile(
     profiles_db_path: str,
     output_path: str,
     threads: int = 4,
+    no_filter: bool = False,
 ) -> None:
     try:
+        dom_t_option = ""
+        if no_filter:
+            dom_t_option = "--domT -10000"
         # run hmmsearch
-        cmd = "hmmsearch -o /dev/null --tblout {} --cpu {} {} {}".format(
+        cmd = "hmmsearch -o /dev/null --tblout {} --cpu {} {} {} {}".format(
             output_path,
             str(threads),
+            dom_t_option,
             fasta_file_path,
             profiles_db_path,
         )
@@ -1014,6 +1060,7 @@ def full_hmmsearch(
     output_full_hmmsearch_results_path: str,
     tmp_dir_path: str,
     n_processes: int,
+    no_filter: bool = False,
 ) -> None:
     """
     Runs hmmsearch on a fasta file using a profile database.
@@ -1056,6 +1103,7 @@ def full_hmmsearch(
                     input_fasta_path,
                     search_output_path,
                     1,
+                    no_filter,
                 )
             )
     if len(args) == 0:
@@ -1288,6 +1336,20 @@ def _subclusters_fully_contain_rep_seqs(
     return set(rep_seq_records) == set(subcluster_records)
 
 
+def has_duplicate_ids(fasta_path: str) -> bool:
+    """
+    Checks if a fasta file has duplicate sequence IDs.
+    :param fasta_path: path to fasta file
+    :return: True if there are duplicate sequence IDs, False otherwise
+    """
+    ids = set()
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        if record.id in ids:
+            return True
+        ids.add(record.id)
+    return False
+
+
 def single_ortholog_to_subclusters(
     file_path: str,
     subclusters_output_path: str,
@@ -1331,6 +1393,9 @@ def single_ortholog_to_subclusters(
             os.remove(path)
 
     # process the file
+    # assure no duplicates
+    if has_duplicate_ids(file_path):
+        raise ValueError(f"{file_path} contains duplicate sequence IDs")
     # rename the fasta headers to numbers so that mmseqs handles them uniformly
     _convert_fasta_headers(
         file_path,
@@ -1361,7 +1426,18 @@ def single_ortholog_to_subclusters(
         f"{output_rep_seq_dir}{fname}.fasta",
     )
 
+    # TEST NOT TO CREATE SUBCLUSTERS
+    # DELETE LATER
+    if False:
+        _convert_fasta_headers_back(
+            f"{tmp_nr90}{fname}_rep_seq.fasta",
+            f"{tmp_nr90}{fname}.mapping",
+            f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
+        )
+        return
+
     # clustering to get subclusters out of the representative sequences
+
     cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c 0.5 {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
     result = subprocess.run(
         cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -1501,6 +1577,8 @@ def orthologs_to_subclusters(
     ]
     if len(input_fasta_file_paths) == 0:
         raise ValueError(f"no files with .fasta suffix found in {ortholog_fasta_dir}")
+    # assure no duplicates
+
     pool = mp.Pool(processes=nthreads // mmseq_nthreads)
     for fp in input_fasta_file_paths:
         pool.apply_async(

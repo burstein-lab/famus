@@ -29,26 +29,18 @@ class SDFloader:
         leftovers_sequence_ids: dict,  # @TODO: add preferential sampling for leftovers
         triplets_per_class=3000,
         triplets_per_leftover=10,
-        max_leftover_triplets=300,
         load_stack_size=100000,
         nthreads=2,
-    ) -> None:
+    ):
         logger.info("Creating triplets")
         self.load_stack_min_len = load_stack_size
-        sdf_sample_indices = set(range(len(sdf)))
+        indices = set(range(len(sdf)))
         label_to_indices = sdf.get_label_to_indices()
         index_ids_to_indices = {idx: i for i, idx in enumerate(sdf.index_ids)}
-        if leftovers_sequence_ids and triplets_per_leftover > 0:
-            label_to_leftover_indices = {
-                label: [
-                    index_ids_to_indices[idx_id]
-                    for idx_id in idx_ids
-                    if idx_id in index_ids_to_indices
-                ]
-                for label, idx_ids in leftovers_sequence_ids.items()
-            }
-        else:
-            label_to_leftover_indices = {}
+        label_to_leftover_indices = {
+            label: [index_ids_to_indices[idx_id] for idx_id in idx_ids]
+            for label, idx_ids in leftovers_sequence_ids.items()
+        }
 
         manager = mp.Manager()
         label_to_indices = manager.dict(label_to_indices)
@@ -70,11 +62,10 @@ class SDFloader:
                 (
                     label_to_indices,
                     label,
-                    sdf_sample_indices,
+                    indices,
                     leftover_indices,
                     triplets_per_class,
                     triplets_per_leftover,
-                    max_leftover_triplets,
                 )
             )
         triplets = pool.starmap(
@@ -174,7 +165,6 @@ class SDFloader:
         leftovers_sequence_indices: list,
         num_triplets: int,
         num_triplets_per_leftover: int,
-        max_leftover_triplets: int,
     ) -> list:
         """
         Creates triplets for a given label. The triplets are created in a way that the anchor and positive samples are
@@ -196,19 +186,13 @@ class SDFloader:
             ancors = np.array(
                 list(leftovers_sequence_indices) * num_triplets_per_leftover
             )
-            if len(ancors) > max_leftover_triplets:
-                ancors = np.random.choice(
-                    a=ancors, size=max_leftover_triplets, replace=False
-                )
             positives = np.random.choice(
                 a=indices,
-                size=len(ancors),
-                replace=True,
+                size=num_triplets_per_leftover * len(leftovers_sequence_indices),
             )
             negatives = np.random.choice(
                 a=other_indices,
-                size=len(ancors),
-                replace=True,
+                size=num_triplets_per_leftover * len(leftovers_sequence_indices),
             )
             for ancor_idx, positive_idx, negative_idx in zip(
                 ancors, positives, negatives
@@ -268,16 +252,16 @@ def prepare_sdfloader(
     """
     with open(sdf_train_path, "rb") as f:
         sdf_train = pickle.load(f)
+    # @TODO get all leftover sequence ids
     leftovers_sequence_ids = {}
-    if leftovers_dir and triplets_per_leftover > 0:
-        for path in [os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)]:
-            ids = subprocess.check_output(
-                f"seqkit seq -in < {path}", shell=True
-            ).decode("utf-8")
-            ids = ids.strip().split("\n")
-            leftovers_sequence_ids[
-                os.path.basename(path).removesuffix(".leftovers.fasta")
-            ] = ids
+    for path in [os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)]:
+        ids = subprocess.check_output(f"seqkit seq -in < {path}", shell=True).decode(
+            "utf-8"
+        )
+        ids = ids.strip().split("\n")
+        leftovers_sequence_ids[
+            os.path.basename(path).removesuffix(".leftovers.fasta")
+        ] = ids
 
     sdfloader = SDFloader(
         sdf_train,
@@ -287,6 +271,5 @@ def prepare_sdfloader(
         load_stack_size=load_stack_size,
         nthreads=nthreads,
     )
-
     with open(output_path, "wb+") as f:
         pickle.dump(sdfloader, f)
