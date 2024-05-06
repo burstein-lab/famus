@@ -37,11 +37,13 @@ def _train_model(
     :param evaluation: Whether to evaluate the model every 10th batch.
     :return: The trained model.
     """
-    optimizer = optim.SGD(model.parameters(), lr=0.005, momentum=0.9)
+    learn_rate = 0.005
+    min_learn_rate = learn_rate / 100
+    optimizer = optim.SGD(model.parameters(), lr=learn_rate, momentum=0.9)
 
     model.train()
     total_batches = sdfloader.get_num_batches(batch_size)
-    opt_step = 0.005 / (total_batches * num_epochs)
+    opt_step = learn_rate / (total_batches * num_epochs)
     last_k_losses = []
     moving_avg_losses = []
     last_k_eval_losses = []
@@ -73,8 +75,6 @@ def _train_model(
                     batch[2].float().to(device),
                 )
             if eval_round:
-                for g in optimizer.param_groups:
-                    g["lr"] = max(g["lr"] - opt_step, 0.0001)
                 model.eval()
                 with torch.no_grad():
                     preds = model(batch)
@@ -124,6 +124,8 @@ def _train_model(
                     [g["lr"] for g in optimizer.param_groups]
                 )
             logger.info(msg)
+            for g in optimizer.param_groups:
+                g["lr"] = max(g["lr"] - opt_step, min_learn_rate)
             batch_num += 1
             last_time = time.time()
 
