@@ -10,9 +10,10 @@ from torch import optim
 from torch.nn import TripletMarginLoss
 
 from app import logger
-from app.model import VariableNet, FamusNet, FamusNetTwo
+from app.model import VariableNet, KNet, VariableL2Net
 from app.sdfloader import SDFloader
 from torch.optim.lr_scheduler import StepLR
+import wandb
 
 
 def _train_model(
@@ -40,7 +41,14 @@ def _train_model(
     learn_rate = 0.005
     min_learn_rate = learn_rate / 100
     optimizer = optim.SGD(model.parameters(), lr=learn_rate, momentum=0.9)
-
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="kegg_21",
+        # track hyperparameters and run metadata
+        config={
+            "desc": "VariableL2Net: 2 layers, 320 embedding size, L2 every layer plus before input",
+        },
+    )
     model.train()
     total_batches = sdfloader.get_num_batches(batch_size)
     opt_step = learn_rate / (total_batches * num_epochs)
@@ -59,8 +67,10 @@ def _train_model(
         batch_num = 1
         last_time = time.time()
         batch: tuple
+        logging_dict = {"epoch": epoch_num}
         for batch in sdfloader.triplet_batch_generator(batch_size=batch_size):
             x += 1
+            logging_dict["batch"] = x
             if save_checkpoints and x % 10_000 == 0:
                 torch.save(model, checkpoint_dir_path + str(x) + "_checkpoint.pt")
             if evaluation and batch_num % 10 == 0:
@@ -84,7 +94,9 @@ def _train_model(
             ancor_preds, positive_preds, negative_preds = preds[0], preds[1], preds[2]
             loss = triplet_loss_module(ancor_preds, positive_preds, negative_preds)
             if not eval_round:
-                t_loss += loss.item()
+                loss_item = loss.item()
+                logging_dict["training loss"] = loss_item
+                t_loss += loss_item
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -94,15 +106,19 @@ def _train_model(
                     moving_avg_loss = np.mean(last_k_losses)
                     moving_avg_losses.append(moving_avg_loss)
                     x_for_moving_avg.append(x)
+                    logging_dict["moving average loss"] = moving_avg_loss
             else:
-                last_k_eval_losses.append(loss.item())
+                eval_loss = loss.item()
+                last_k_eval_losses.append(eval_loss)
+                logging_dict["eval loss"] = eval_loss
                 if len(last_k_eval_losses) >= 1000:
                     last_k_eval_losses = last_k_eval_losses[-1000:]
                     moving_avg_eval_loss = np.mean(last_k_eval_losses)
                     moving_avg_eval_losses.append(moving_avg_eval_loss)
                     x_for_moving_avg_eval.append(x)
+                    logging_dict["moving average eval loss"] = moving_avg_eval_loss
             batch_time = time.time() - last_time
-
+            logging_dict["batch time"] = batch_time
             msg = (
                 "Epoch: "
                 + str(epoch_num)
@@ -124,15 +140,18 @@ def _train_model(
                     [g["lr"] for g in optimizer.param_groups]
                 )
             logger.info(msg)
-            for g in optimizer.param_groups:
+            for i, g in enumerate(optimizer.param_groups):
+                logging_dict["lr" + str(i)] = g["lr"]
                 g["lr"] = max(g["lr"] - opt_step, min_learn_rate)
+
+            wandb.log(logging_dict)
             batch_num += 1
             last_time = time.time()
 
         epoch_time = time.time() - start_time
         logger.info("Epoch: " + str(epoch_num) + " Epoch time: " + str(epoch_time))
         epoch_num += 1
-
+    wandb.finish()
     return model
 
 
@@ -189,17 +208,18 @@ def train(
     input_size = sdfloader.sdf.matrix.shape[1]
     logger.info("input size: " + str(input_size))
     if not checkpoint_dir_path:
-        snn_model = VariableNet(input_size, 2, 320)
-        # snn_model = FamusNetTwo(input_size)
+        # snn_model = VariableL2Net(input_size)
+        snn_model = VariableNet(input_size, 3, 320)
         snn_model.to(device)
     else:
         result = load_latest_checkpoint(checkpoint_dir_path)
         if result is None:
-            snn_model = VariableNet(input_size, 2, 320)
+            # snn_model = VariableL2Net(input_size)
+            snn_model = VariableNet(input_size, 3, 320)
             # snn_model = FamusNetTwo(input_size)
             snn_model.to(device)
         else:
-            snn_model, result
+            snn_model = result
     logger.info("Starting to train on device: " + str(device))
     loss = TripletMarginLoss(margin=1, p=2)
     logger.info("Training model")

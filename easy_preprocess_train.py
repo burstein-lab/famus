@@ -10,6 +10,8 @@ from app import get_cfg, logger
 from app.sdfloader import prepare_sdfloader
 # from app.utils import concatenate_files, now
 
+TRIPLETS_PER_LEFTOVER = 0
+
 
 def main(
     input_fasta_dir_path: str,
@@ -360,7 +362,7 @@ def main(
             leftovers_dir=leftovers_dir,
             nthreads=nthreads,
             triplets_per_class=3000,
-            triplets_per_leftover=10,
+            triplets_per_leftover=TRIPLETS_PER_LEFTOVER,
             output_path=sdfloader_path,
             load_stack_size=100000,
         )

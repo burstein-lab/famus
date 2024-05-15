@@ -1,6 +1,6 @@
 # Content: Configuration file for the clustering, training and classification pipelines
 # See README.md for more information
-nthreads: 64
+nthreads: 100
 user_device: 'cuda' # 'cpu' or torch device e.g 'cuda'
 threshold: 'bootstrap' # 'bootstrap' or positive float
 chunksize: 20000

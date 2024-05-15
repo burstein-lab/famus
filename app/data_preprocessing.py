@@ -126,18 +126,19 @@ def generate_ground_truth(
         os.path.join(input_augmented_subclusters_fastas_dir_path, f)
         for f in os.listdir(input_augmented_subclusters_fastas_dir_path)
     ]
-    leftover_subcluster_fasta_paths = [
-        os.path.join(input_leftovers_dir_path, f)
-        for f in os.listdir(input_leftovers_dir_path)
-    ]
-    all_fasta_paths = augmented_subcluster_fasta_paths + leftover_subcluster_fasta_paths
+    # leftover_subcluster_fasta_paths = [
+    #     os.path.join(input_leftovers_dir_path, f)
+    #     for f in os.listdir(input_leftovers_dir_path)
+    # ]
+    all_fasta_paths = (
+        augmented_subcluster_fasta_paths  # + leftover_subcluster_fasta_paths
+    )
 
     assert all(f.endswith(".fasta") for f in all_fasta_paths)
     for fasta_path in all_fasta_paths:
         orthology_name = re.sub(
             SUBCLUSTER_SUFFIX_PATTERN, "", os.path.basename(fasta_path)
-        )
-
+        ).removesuffix(".leftovers.fasta")
         with open(fasta_path, "r") as f:
             for record in SeqIO.parse(f, "fasta"):
                 if record.id not in labeled_sequences_ground_truth:
@@ -1172,14 +1173,14 @@ def single_split_search(
         output_path, subcluster_split_name + ".hmmsearch.tsv"
     )
     if os.path.exists(tsv_output_path):
-        logger.info("skipping {}".format(subcluster_split_name))
+        logger.debug("skipping {}".format(subcluster_split_name))
         return
-    logger.info("starting {}".format(subcluster_split_name))
+    logger.debug("starting {}".format(subcluster_split_name))
     # run hmmsearch
     hmmsearch_output_path = output_path + subcluster_split_name + ".hmmsearch"
     cmd = "hmmsearch -o /dev/null --tblout {}".format(hmmsearch_output_path)
     cmd += " {} {}".format(profile_path, file_for_scoring)
-    logger.info("Running CMD: " + cmd)
+    logger.debug("Running CMD: " + cmd)
     cmd = cmd.split(" ")
     cmd = [s for s in cmd if s]
     completed_process = subprocess.run(cmd, stdout=subprocess.PIPE)
@@ -1397,7 +1398,7 @@ def single_ortholog_to_subclusters(
                 existing_subclusters_in_output, file_path
             ):
                 # All sequences are in subclusters - therefore the file has already been processed
-                logger.info(f"{fname} has already been processed, skipping")
+                logger.debug(f"{fname} has already been processed, skipping")
                 return
             for path in existing_subclusters_in_output:
                 os.remove(path)
@@ -1420,7 +1421,7 @@ def single_ortholog_to_subclusters(
         )
         if result.returncode != 0:
             logger.warning(
-                f"cmd failed: {cmd} with return code {result.returncode} and error message {result.stderr.decode(sys.stdout.encoding)}, retrying with single step clustering"
+                f"warning: mmseqs failed on clustering {fname}, retrying with single step clustering"
             )
             cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_nthreads} --single-step-clustering -s 7.5 -c 0.8 --min-seq-id 0.9"
             result = subprocess.run(
@@ -1430,7 +1431,7 @@ def single_ortholog_to_subclusters(
                 raise ValueError(
                     f"cmd failed: {cmd} with return code {result.returncode} and error message {result.stderr.decode(sys.stdout.encoding)}"
                 )
-
+            logger.info(f"single-step clustering successful for {fname}")
         if (
             not os.path.exists(f"{tmp_nr90}{fname}_rep_seq.fasta")
             or os.path.getsize(f"{tmp_nr90}{fname}_rep_seq.fasta") == 0
@@ -1444,6 +1445,15 @@ def single_ortholog_to_subclusters(
             f"{output_rep_seq_dir}{fname}.fasta",
         )
 
+        # if not doing subclusters
+        if True:
+            _convert_fasta_headers_back(
+                f"{tmp_nr90}{fname}_rep_seq.fasta",
+                f"{tmp_nr90}{fname}.mapping",
+                f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
+            )
+            return
+
         # clustering to get subclusters out of the representative sequences
 
         cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c 0.5 {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
@@ -1452,7 +1462,7 @@ def single_ortholog_to_subclusters(
         )
         if result.returncode != 0:
             logger.warning(
-                f"cmd failed: {cmd} with return code {result.returncode} and error message {result.stderr.decode(sys.stdout.encoding)}, retrying with single step clustering"
+                f"warning: subclustering mmseqs failed on clustering {fname}, retrying with single step clustering"
             )
             cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} --single-step-clustering -s 7.5 -c 0.5 {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
             result = subprocess.run(
@@ -1462,6 +1472,7 @@ def single_ortholog_to_subclusters(
                 raise ValueError(
                     f"cmd failed: {cmd} with return code {result.returncode} and error message {result.stderr.decode(sys.stdout.encoding)}"
                 )
+            logger.info(f"single-step clustering successful for {fname}")
 
         if (
             not os.path.exists(f"{tmp_clu}{fname}_cluster.tsv")
@@ -1487,14 +1498,14 @@ def single_ortholog_to_subclusters(
         cluster_names_and_sizes = sorted(
             cluster_names_and_sizes, key=lambda x: x[1], reverse=True
         )
-        coverage = 0.8
+        coverage = 0.9
         i = 0
         total_seqs_covered = 0
         while total_seqs_covered < total_seqs * coverage:
             total_seqs_covered += cluster_names_and_sizes[i][1]
             i += 1
         index_of_first_leftover_subcluster = i
-        logger.info(f"{fname} has {index_of_first_leftover_subcluster} subclusters")
+        logger.debug(f"{fname} has {index_of_first_leftover_subcluster} subclusters")
         # get the records for all sequences
         with open(f"{tmp_nr90}{fname}_rep_seq.fasta", "r") as f:
             records = [record for record in SeqIO.parse(f, "fasta")]
@@ -1529,12 +1540,12 @@ def single_ortholog_to_subclusters(
             )
 
             # make profiles
-            logger.info(f"doing {fname} qmafft")
+            logger.debug(f"doing {fname} qmafft")
             qmafft(
                 input_path=f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
                 output_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
             )
-            logger.info(f"doing {fname} hmmbuild")
+            logger.debug(f"doing {fname} hmmbuild")
             hmmbuild(
                 input_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
                 output_path=f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm",
@@ -1572,7 +1583,7 @@ def single_ortholog_to_subclusters(
             f"{output_rep_seq_dir}{fname}.fasta.tmp",
         )
         if len(leftover_records) > 0:
-            logger.info(f"{fname} has {len(leftover_records)} leftovers")
+            logger.debug(f"{fname} has {len(leftover_records)} leftovers")
             with open(
                 f"{tmp_leftovers}{fname}.leftovers.fasta.tmp", "w+"
             ) as leftover_f:
