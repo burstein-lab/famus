@@ -5,7 +5,6 @@ import yaml
 
 from app import data_preprocessing as dp
 from app import get_cfg, logger
-from app.utils import now
 
 
 def main(
@@ -14,6 +13,7 @@ def main(
     input_sdf_train_path: str,
     data_dir_path: str,
     nthreads: int = None,
+    load_sdf_from_pickle: bool = False,
 ) -> None:
     """
     Runs preprocessing before classification.
@@ -35,6 +35,7 @@ def main(
     logger.info("Data directory: {}".format(data_dir_path))
 
     cfg = get_cfg()
+
     if not nthreads:
         nthreads = cfg["nthreads"]
     logger.info("Number of threads: {}".format(nthreads))
@@ -65,6 +66,12 @@ def main(
 
     if not state["full_hmmsearch_results"] or not skip:
         logger.info("Running full hmmsearch")
+        if not os.path.exists(input_fasta_file_path):
+            raise ValueError(f"{input_fasta_file_path} does not exist")
+        if not os.path.exists(input_full_profiles_dir_path):
+            raise ValueError(f"{input_full_profiles_dir_path} does not exist")
+        if not os.path.exists(input_sdf_train_path):
+            raise ValueError(f"{input_sdf_train_path} does not exist")
         full_hmmsearch_results = os.path.join(
             data_dir_path, "full_hmmsearch_results.txt"
         )
@@ -99,6 +106,7 @@ def main(
             input_train_sdf_path=input_sdf_train_path,
             input_fasta_path=input_fasta_file_path,
             output_path=sdf_classify_path,
+            load_sdf_from_pickle=load_sdf_from_pickle,
         )
         state["sdf_classify"] = sdf_classify_path
         with open(state_file_path, "w+") as f:
@@ -142,6 +150,8 @@ if __name__ == "__main__":
         help="Number of threads to use for parallel processing. If not specified, will use cfg.yaml parameter.s",
         required=False,
     )
+    parser.add_argument("--load_sdf_from_pickle", action=argparse.BooleanOptionalAction)
+
     args = parser.parse_args()
     if args.nthreads:
         nthreads = args.nthreads
@@ -153,4 +163,5 @@ if __name__ == "__main__":
         input_sdf_train_path=args.input_sdf_train_path,
         data_dir_path=args.data_dir_path,
         nthreads=args.nthreads,
+        load_sdf_from_pickle=args.load_sdf_from_pickle,
     )

@@ -1,12 +1,12 @@
-import re
 import multiprocessing as mp
 import os
 import pickle
 import random
+import re
 import shutil
 import subprocess
 import sys
-import time
+import traceback
 import uuid
 from collections import namedtuple
 
@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from app import get_cfg, logger, now
 from app.fasta_parser import FastaParser
-from app.sdf import from_sparse_dict
+from app.sdf import from_sparse_dict, load
 from app.utils import concatenate_files, even_split
 
 SUBCLUSTER_SUFFIX_PATTERN = r"\.sub_cluster\.cluster\.\d+\.fasta$"
@@ -100,45 +100,34 @@ def get_split_subcluster_fasta_paths(path: str) -> list:
 
 def generate_ground_truth(
     input_augmented_subclusters_fastas_dir_path: str,
-    input_leftovers_dir_path: str,
     input_unannotated_sequences_fasta_path: str,
     output_ground_truth_path: str,
 ) -> None:
     """
     Generates a ground truth dictionary for the given orthologs and unannotated sequences.
     The keys are the sequence IDs and the values are the orthology names.
-    :param input_orthologs_fasta_dir_path: path to directory containing ortholog fasta files
+    :param input_augmented_subclusters_fastas_dir_path: path to directory containing augmented subcluster fasta files
     :param input_unannotated_sequences_fasta_path: path to fasta file containing unannotated sequences
     :param output_ground_truth_path: path to output ground truth pickle file
     :return: None
     """
-    (
-        input_augmented_subclusters_fastas_dir_path,
-        input_leftovers_dir_path,
-    ) = validate_dir_paths(
-        [input_augmented_subclusters_fastas_dir_path, input_leftovers_dir_path]
+    (input_augmented_subclusters_fastas_dir_path,) = validate_dir_paths(
+        [
+            input_augmented_subclusters_fastas_dir_path,
+        ]
     )
     if input_unannotated_sequences_fasta_path:
         validate_paths([input_unannotated_sequences_fasta_path])
 
     labeled_sequences_ground_truth = {}
-    augmented_subcluster_fasta_paths = [
-        os.path.join(input_augmented_subclusters_fastas_dir_path, f)
-        for f in os.listdir(input_augmented_subclusters_fastas_dir_path)
-    ]
-    # leftover_subcluster_fasta_paths = [
-    #     os.path.join(input_leftovers_dir_path, f)
-    #     for f in os.listdir(input_leftovers_dir_path)
-    # ]
-    all_fasta_paths = (
-        augmented_subcluster_fasta_paths  # + leftover_subcluster_fasta_paths
+    augmented_subcluster_fasta_paths = get_subcluster_fasta_paths(
+        input_augmented_subclusters_fastas_dir_path
     )
-
-    assert all(f.endswith(".fasta") for f in all_fasta_paths)
-    for fasta_path in all_fasta_paths:
+    assert all(f.endswith(".fasta") for f in augmented_subcluster_fasta_paths)
+    for fasta_path in augmented_subcluster_fasta_paths:
         orthology_name = re.sub(
             SUBCLUSTER_SUFFIX_PATTERN, "", os.path.basename(fasta_path)
-        ).removesuffix(".leftovers.fasta")
+        )
         with open(fasta_path, "r") as f:
             for record in SeqIO.parse(f, "fasta"):
                 if record.id not in labeled_sequences_ground_truth:
@@ -165,7 +154,10 @@ def generate_ground_truth(
                     )
                 unlabeled_sequences_ground_truth[record.id] = "unknown"
 
-    output = labeled_sequences_ground_truth | unlabeled_sequences_ground_truth
+    if input_unannotated_sequences_fasta_path:
+        output = labeled_sequences_ground_truth | unlabeled_sequences_ground_truth
+    else:
+        output = labeled_sequences_ground_truth
     with open(output_ground_truth_path, "wb+") as f:
         pickle.dump(output, f)
 
@@ -173,7 +165,6 @@ def generate_ground_truth(
 def prepare_full_hmmsearch_input(
     data_dir_path: str,
     augmented_subcluster_dir: str,
-    leftovers_dir: str,
     tmp_dir_path: str,
     input_unknown_sequences_fasta_path: str,
     output_full_hmmsearch_input_path: str,
@@ -182,18 +173,13 @@ def prepare_full_hmmsearch_input(
     samples_profiles_product_limit=samples_profiles_product_limit,
 ):
     labeled_ids_per_cluster = []
-    labeled_ids_per_leftover = []
     for fasta_path in get_subcluster_fasta_paths(augmented_subcluster_dir):
         labeled_ids_per_cluster.append(get_fasta_ids(fasta_path))
-    for fasta_path in get_subcluster_fasta_paths(leftovers_dir):
-        labeled_ids_per_leftover.append(get_fasta_ids(fasta_path))
 
     if not fraction_of_sampled_unknown_sequences == "do_not_use":
         # check for overlap between unknown sequences and labeled sequences
         unlabeled_ids = get_fasta_ids(input_unknown_sequences_fasta_path)
-        labeled_ids = [
-            item for sublist in labeled_ids_per_cluster for item in sublist
-        ] + [item for sublist in labeled_ids_per_leftover for item in sublist]
+        labeled_ids = [item for sublist in labeled_ids_per_cluster for item in sublist]
         both_labeled_and_unlabeled = set(labeled_ids) & set(unlabeled_ids)
         if both_labeled_and_unlabeled:
             raise ValueError(
@@ -202,9 +188,7 @@ def prepare_full_hmmsearch_input(
 
     # calculate the total number of sequences that will be sampled
     if number_of_sampled_sequences_per_subcluster == "use_all":
-        total_sampled_sequences = sum(
-            [len(ids) for ids in labeled_ids_per_cluster + labeled_ids_per_leftover]
-        )
+        total_sampled_sequences = sum([len(ids) for ids in labeled_ids_per_cluster])
 
     elif (
         isinstance(number_of_sampled_sequences_per_subcluster, int)
@@ -215,7 +199,7 @@ def prepare_full_hmmsearch_input(
                 min(len(ids), number_of_sampled_sequences_per_subcluster)
                 for ids in labeled_ids_per_cluster
             ]
-        ) + sum(len(ids) for ids in labeled_ids_per_leftover)
+        )
     else:
         raise ValueError(
             "number_of_sampled_sequences_per_subcluster must be 'use_all' or a positive integer"
@@ -231,54 +215,24 @@ def prepare_full_hmmsearch_input(
         )
     number_of_profiles = len(labeled_ids_per_cluster)
     hmmsearch_load_size = total_sampled_sequences * number_of_profiles
-    total_number_of_leftover_seqs = sum([len(ids) for ids in labeled_ids_per_leftover])
-    number_of_sampled_sequences_per_leftover = (
-        None if total_number_of_leftover_seqs > 0 else 0
-    )
     # adjust the total number of sequences to be sampled if the product of the number of sampled sequences and the number of profiles is greater than the limit
     if hmmsearch_load_size > samples_profiles_product_limit:
         logger.warning(
             f"the product of the number of sampled sequences and the number of profiles is {hmmsearch_load_size}, which is greater than the limit of {samples_profiles_product_limit}. Automatically choosing sample sizes."
         )
-        sampled_sequences_limit = samples_profiles_product_limit // number_of_profiles
+
         total_number_of_subcluster_seqs = sum(
             [len(ids) for ids in labeled_ids_per_cluster]
         )
-        total_number_of_leftover_seqs = sum(
-            [len(ids) for ids in labeled_ids_per_leftover]
-        )
 
-        total_sampled_leftover_sequences = min(
-            total_number_of_leftover_seqs, sampled_sequences_limit * 0.25
-        )
-        number_of_sampled_sequences_per_leftover = int(
-            total_sampled_leftover_sequences // number_of_profiles
-        )
-
-        total_sampled_subcluster_sequences = min(
-            total_number_of_subcluster_seqs,
-            sampled_sequences_limit - total_sampled_leftover_sequences,
-        )
         number_of_sampled_sequences_per_subcluster = int(
-            total_sampled_subcluster_sequences // number_of_profiles
+            total_number_of_subcluster_seqs // number_of_profiles
         )
         if number_of_sampled_sequences_per_subcluster < 6:
             number_of_sampled_sequences_per_subcluster = 6
 
-        if (
-            number_of_sampled_sequences_per_leftover < 2
-            and number_of_sampled_sequences_per_leftover > 0
-        ):
-            number_of_sampled_sequences_per_leftover = 2
-        # TODO: remove leftover sampling if the current version works out
-        # TODO: delete the line below
-        number_of_sampled_sequences_per_leftover = 0
-        # TODO: delete the line above
         logger.info(
             f"number of sampled sequences per subcluster: {number_of_sampled_sequences_per_subcluster}"
-        )
-        logger.info(
-            f"number of sampled sequences per leftover: {number_of_sampled_sequences_per_leftover}"
         )
 
     sampled_subclusters_fasta_path = os.path.join(
@@ -313,55 +267,6 @@ def prepare_full_hmmsearch_input(
         )
     )
 
-    sampled_leftovers_fasta_path = os.path.join(
-        data_dir_path, "sampled_leftovers.fasta"
-    )
-    if number_of_sampled_sequences_per_leftover is None or (
-        isinstance(number_of_sampled_sequences_per_leftover, int)
-        and number_of_sampled_sequences_per_leftover > 0
-    ):
-        if (
-            isinstance(number_of_sampled_sequences_per_leftover, int)
-            and number_of_sampled_sequences_per_leftover > 0
-        ):
-            logger.info("sampling leftovers for model")
-            sample_subclusters_for_model(
-                leftovers_dir,
-                output_sampled_subclusters_fasta_path=sampled_leftovers_fasta_path,
-                number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_leftover,
-            )
-
-        else:
-            logger.info("using all leftovers for model")
-
-            concatenate_files(
-                files=[
-                    os.path.join(leftovers_dir, f) for f in os.listdir(leftovers_dir)
-                ],
-                output=sampled_leftovers_fasta_path,
-                track_progress=False,
-            )
-        os.system(
-            "cat "
-            + sampled_leftovers_fasta_path
-            + " >> "
-            + output_full_hmmsearch_input_path
-        )
-
-        n_leftover_sequences = int(
-            subprocess.check_output(
-                "grep -c '>' " + sampled_leftovers_fasta_path, shell=True
-            )
-        )
-    elif number_of_sampled_sequences_per_leftover == 0:
-        logger.info("not using leftovers for model")
-        n_leftover_sequences = 0
-    else:
-        raise ValueError(
-            f"number_of_sampled_sequences_per_leftover must be a nonnegative integer or None, not {number_of_sampled_sequences_per_leftover}"
-        )
-    n_total_sequences = n_sampled_subcluster_sequences + n_leftover_sequences
-
     if fraction_of_sampled_unknown_sequences == "use_all":
         logger.info("using all unknown sequences for model")
         os.system(
@@ -379,7 +284,9 @@ def prepare_full_hmmsearch_input(
         )
         sample_unknown_sequences_for_model(
             input_unknown_sequences_fasta_path=input_unknown_sequences_fasta_path,
-            n_sequences=int(n_total_sequences * fraction_of_sampled_unknown_sequences),
+            n_sequences=int(
+                n_sampled_subcluster_sequences * fraction_of_sampled_unknown_sequences
+            ),
             tmp_dir_path=tmp_dir_path,
             output_sampled_unknown_sequences_fasta_path=sampled_unknown_sequences_fasta_path,
         )
@@ -509,8 +416,7 @@ def hmmsearch_results_to_train_sdf(
     }
     sdf = from_sparse_dict(sparse_dict, ground_truth, dtype=np.int64)
     logger.info("Saving sparse dataframe")
-    with open(output_sdf_path, "wb+") as f:
-        pickle.dump(sdf, f)
+    sdf.save(output_sdf_path)
 
 
 def hmmsearch_results_to_classification_sdf(
@@ -518,6 +424,7 @@ def hmmsearch_results_to_classification_sdf(
     input_train_sdf_path: str,
     input_fasta_path: str,
     output_path: str,
+    load_sdf_from_pickle: bool = False,
 ) -> None:
     """
     Creates a sparse dataframe from the hmmsearch results.
@@ -548,7 +455,10 @@ def hmmsearch_results_to_classification_sdf(
         seq_id = line[seq_id_idx]
         seen_ids.add(seq_id)
         sparse_dict[(seq_id, profile_id)] = int(float(score))
-    sdf_train = pickle.load(open(input_train_sdf_path, "rb"))
+    if load_sdf_from_pickle:
+        sdf_train = pickle.load(open(input_train_sdf_path, "rb"))
+    else:
+        sdf_train = load(input_train_sdf_path)
     all_profiles = sdf_train.column_names
     missing_profiles = set(all_profiles) - seen_profiles
     with open(input_fasta_path) as h:
@@ -684,7 +594,7 @@ def emit_sequences(profile_path: str, output_path: str, n_sequences: int) -> Non
         )
 
 
-def qmafft(input_path: str, output_path: str) -> None:
+def qmafft(input_path: str, output_path: str, nthreads=1) -> None:
     """
     Uses mafft to align sequences and saves the alignment to a file.
     :param input_path: path to input fasta file
@@ -692,7 +602,9 @@ def qmafft(input_path: str, output_path: str) -> None:
     :return: None
     """
     output = subprocess.check_output(
-        "app/qmafft {} 1 --quiet".format(input_path).split(" ")
+        "app/qmafft {} {} --auto --anysymbol --quiet".format(
+            input_path, nthreads
+        ).split(" ")
     ).decode(sys.stdout.encoding)
     if output or not os.path.exists(output_path):
         with open(output_path, "w+") as handle:
@@ -701,7 +613,7 @@ def qmafft(input_path: str, output_path: str) -> None:
         raise ValueError(f"{input_path} failed to align with mafft")
 
 
-def hmmbuild(input_path: str, output_path: str, name: str) -> None:
+def hmmbuild(input_path: str, output_path: str, name: str, nthreads=1) -> None:
     """
     Uses hmmbuild to build a profile from an alignment and saves the profile to a file.
     :param input_path: path to input alignment file
@@ -709,13 +621,18 @@ def hmmbuild(input_path: str, output_path: str, name: str) -> None:
     :param name: name of profile
     :return: None
     """
-    cmd = "hmmbuild -n {} --amino {} {}".format(name, output_path, input_path)
+    cmd = "hmmbuild -n {} --amino --cpu {} {} {}".format(
+        name,
+        nthreads,
+        output_path,
+        input_path,
+    )
     result = subprocess.run(
         cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     if result.returncode != 0:
         raise ValueError(
-            f"hmmbuild failed with return code {result.returncode} and error message {result.stderr.decode(sys.stdout.encoding)}"
+            f"hmmbuild command {cmd} failed with return code {result.returncode}"
         )
 
 
@@ -881,9 +798,9 @@ def randomly_split_subclusters(
         desc="subclusters",
         total=len(os.listdir(input_subclusters_fasta_dir_path)),
     ):
-        assert ".sub_cluster.cluster." in file and file.endswith(
-            ".fasta"
-        ), "file {} is not a subcluster fasta".format(file)
+        assert ".sub_cluster.cluster." in file and file.endswith(".fasta"), (
+            "file {} is not a subcluster fasta".format(file)
+        )
         subcluster = file.removesuffix(".fasta")
         ortholog = re.sub(SUBCLUSTER_PROFILE_SUFFIX_PATTERN, "", subcluster)
         if ortholog not in split_subcluster_md:
@@ -891,9 +808,9 @@ def randomly_split_subclusters(
         file_path = os.path.join(input_subclusters_fasta_dir_path, file)
         parser = FastaParser(file_path)
         number_of_sequences = len(parser)
-        assert (
-            number_of_sequences >= 6
-        ), "subcluster {} has less than 6 sequences".format(file)
+        assert number_of_sequences >= 6, (
+            "subcluster {} has less than 6 sequences".format(file)
+        )
         seq_ids = parser.get_ids()
         random.shuffle(seq_ids)
         groups = even_split(seq_ids, 3)
@@ -999,29 +916,6 @@ def create_subcluster_profiles(
     pool.join()
 
 
-def compile_subclusters_profile_db(
-    subcluster_dir: str, full_profile_dir: str, output_path: str, nthreads=nthreads
-) -> None:
-    """
-    Creates a profile database from subcluster fasta files.
-    :param subcluster_dir: path to directory containing subcluster fasta files
-    :param full_profile_dir: path to output directory for profiles
-    :param output_path: path to output profile database
-    :param nthreads: number of threads to use
-    :return: None
-    """
-    create_subcluster_profiles(subcluster_dir, full_profile_dir, nthreads=nthreads)
-    concatenate_files(
-        [
-            full_profile_dir + f
-            for f in os.listdir(full_profile_dir)
-            if f.endswith(".hmm")
-        ],
-        output_path,
-        track_progress=False,
-    )
-
-
 def _hmmsearch_single_profile(
     fasta_file_path: str,
     profiles_db_path: str,
@@ -1073,10 +967,12 @@ def full_hmmsearch(
 ) -> None:
     """
     Runs hmmsearch on a fasta file using a profile database.
-    :param input_full_profiles_dir_path: path to profiles directory
+    :param input_full_profiles_dir_path: path to directory containing full profiles
     :param input_fasta_path: path to fasta file
     :param output_full_hmmsearch_results_path: path to output hmmsearch results
-    :param n_processes: number of hmmsearch processes to run in parallel
+    :param tmp_dir_path: path to temporary directory
+    :param n_processes: number of processes to use
+    :param no_filter: whether to disable the default HMMER filter
     :return: None
     """
     if not os.path.exists(input_fasta_path):
@@ -1104,7 +1000,7 @@ def full_hmmsearch(
         output_file_paths.append(search_output_path)
         if not (
             os.path.exists(search_output_path)
-            # and tail(search_output_path) == "# [ok]\n"
+            and tail(search_output_path) == "# [ok]\n"
         ):  # check if hmmsearch has not already been run successfully
             args.append(
                 (
@@ -1137,9 +1033,10 @@ def full_hmmsearch(
 
     try:
         logger.info("postprocessing hmmsearch results")
-        with open(tmp_output_path, "r") as input_handle, open(
-            output_full_hmmsearch_results_path, "w+"
-        ) as output_handle:
+        with (
+            open(tmp_output_path, "r") as input_handle,
+            open(output_full_hmmsearch_results_path, "w+") as output_handle,
+        ):
             while line := input_handle.readline():
                 if not line.startswith("#"):
                     line = line.strip("\n").split(" ")
@@ -1197,9 +1094,10 @@ def single_split_search(
         )
 
     logger.info("{} hmmsearch done, postprocessing".format(subcluster_split_name))
-    with open(hmmsearch_output_path, "r") as input_handle, open(
-        tsv_output_path, "w+"
-    ) as output_handle:
+    with (
+        open(hmmsearch_output_path, "r") as input_handle,
+        open(tsv_output_path, "w+") as output_handle,
+    ):
         for line in input_handle.readlines():
             if line and not line.startswith("#"):
                 line = line.strip("\n").split(" ")
@@ -1293,9 +1191,13 @@ def _convert_fasta_headers(
     :return: None
     """
     c = 0
-    with open(input_fasta_path, "r") as input_handle, open(
-        output_fasta_path, "w+"
-    ) as output_handle, open(output_mapping_file, "w+") as mapping_handle:
+    if not os.path.exists(input_fasta_path):
+        raise ValueError(f"input {input_fasta_path} does not exist")
+    with (
+        open(input_fasta_path, "r") as input_handle,
+        open(output_fasta_path, "w+") as output_handle,
+        open(output_mapping_file, "w+") as mapping_handle,
+    ):
         for line in input_handle.readlines():
             if line.startswith(">"):
                 c += 1
@@ -1317,32 +1219,29 @@ def _convert_fasta_headers_back(
     :param output_fasta_path: path to output fasta file
     :return: None
     """
+    if not os.path.exists(input_fasta_path):
+        raise ValueError(f"input {input_fasta_path} does not exist")
+    if not os.path.exists(mapping_file):
+        raise ValueError(f"input {mapping_file} does not exist")
     mapping = {}
     with open(mapping_file, "r") as f:
         for line in f.readlines():
             line = line.strip("\n")
             mapping[line[: line.index(">")]] = line[line.index(">") + 1 :]
-    with open(input_fasta_path, "r") as input_handle, open(
-        output_fasta_path, "w+"
-    ) as output_handle:
+    with (
+        open(input_fasta_path, "r") as input_handle,
+        open(output_fasta_path, "w+") as output_handle,
+    ):
         for line in input_handle.readlines():
             if line.startswith(">"):
                 ind = line.strip(" \n").removeprefix(">")
+                if ind not in mapping:
+                    raise ValueError(
+                        f"mapping file {mapping_file} does not contain mapping for seq {ind} in {input_fasta_path}"
+                    )
                 output_handle.write(">{}\n".format(mapping[ind]))
             else:
                 output_handle.write(line)
-
-
-def _subclusters_fully_contain_rep_seqs(
-    subcluster_files_paths: list[str], rep_seq_file_path: str
-) -> bool:
-    subcluster_records = []
-    for path in subcluster_files_paths:
-        with open(path, "r") as f:
-            records = [record.id for record in SeqIO.parse(f, "fasta")]
-            subcluster_records.extend(records)
-    rep_seq_records = [r.id for r in SeqIO.parse(rep_seq_file_path, "fasta")]
-    return set(rep_seq_records) == set(subcluster_records)
 
 
 def has_duplicate_ids(fasta_path: str) -> bool:
@@ -1362,60 +1261,57 @@ def has_duplicate_ids(fasta_path: str) -> bool:
 def single_ortholog_to_subclusters(
     file_path: str,
     subclusters_output_path: str,
-    leftovers_output_path: str,
     tmp_nr90: str,
     tmp_clu: str,
-    tmp_leftovers: str,
     tmp_hmmsearch: str,
     output_rep_seq_dir: str,
+    create_subclusters=True,
+    mmseqs_cluster_coverage=0.8,
+    mmseqs_cluster_identity=0.9,
+    mmseqs_cluster_coverage_subclusters=0.5,
+    max_fasta_n_sequences_times_longest_sequence=500_000_000,
+    mmseq_nthreads=4,
 ) -> None:
-    """
-    Clusters a single ortholog fasta file into subclusters.
-    :param file_path: path to ortholog fasta file
-    :param output_path: path to output directory
-    :param tmp_nr90: path to temporary directory
-    :param tmp_clu: path to temporary directory
-    :param output_rep_seq_dir: path to output directory for representative sequences
-    :param output_subcluster_dir: path to output directory for subclusters
-    :return: None
-    """
+    logger.info(f"processing {file_path}")
+    done_ortholog_files_dir = os.path.join(tmp_hmmsearch, "done_ortholog_files")
+    os.makedirs(done_ortholog_files_dir, exist_ok=True)
+    tmp_leftovers = os.path.join(tmp_hmmsearch, "leftovers/")
+    os.makedirs(tmp_leftovers, exist_ok=True)
+    tmp_files_and_dirs = []
     try:
         fname = os.path.basename(file_path).removesuffix(".fasta")
+        if os.path.exists(f"{done_ortholog_files_dir}/{fname}.done"):
+            logger.info(f"{fname} already processed")
+            logger.info(f"{fname} done")
+            return
+        if fasta_is_small(file_path, 4):
+            logger.info(f"{fname} is small, not clustering")
+            shutil.copy(file_path, f"{output_rep_seq_dir}{fname}.fasta")
+            shutil.copy(
+                file_path,
+                f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
+            )
+            with open(f"{done_ortholog_files_dir}/{fname}.done", "w+") as f:
+                f.write("done")
+            logger.info(f"{fname} done")
+            return
 
-        # check if the file has already been processed
-
-        existing_subclusters_in_output = [
-            f
-            for f in os.listdir(subclusters_output_path)
-            if re.sub(SUBCLUSTER_SUFFIX_PATTERN, "", f) == fname
-        ]
-        existing_subclusters_in_output = [
-            os.path.join(subclusters_output_path, f)
-            for f in existing_subclusters_in_output
-        ]
-        if len(existing_subclusters_in_output) > 0:
-            if _subclusters_fully_contain_rep_seqs(
-                existing_subclusters_in_output, file_path
-            ):
-                # All sequences are in subclusters - therefore the file has already been processed
-                logger.debug(f"{fname} has already been processed, skipping")
-                return
-            for path in existing_subclusters_in_output:
-                os.remove(path)
-
-        # process the file
         # assure no duplicates
         if has_duplicate_ids(file_path):
             raise ValueError(f"{file_path} contains duplicate sequence IDs")
-        # rename the fasta headers to numbers so that mmseqs handles them uniformly
+        # rename the fasta headers to numbers
         _convert_fasta_headers(
             file_path,
             f"{tmp_nr90}{fname}.fasta",
             f"{tmp_nr90}{fname}.mapping",
         )
-
+        tmp_files_and_dirs.append(f"{tmp_nr90}{fname}.fasta")
+        tmp_files_and_dirs.append(f"{tmp_nr90}{fname}.mapping")
         # initial clustering to remove redundancy
-        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_nthreads} -s 7.5 -c 0.8 --min-seq-id 0.9"
+        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_nthreads} -s 7.5 -c {mmseqs_cluster_coverage} --min-seq-id {mmseqs_cluster_identity}"
+        tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_tmp")
+        tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_rep_seq.fasta")
+        logger.debug(f"running cmd: {cmd}")
         result = subprocess.run(
             cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
@@ -1423,7 +1319,7 @@ def single_ortholog_to_subclusters(
             logger.warning(
                 f"warning: mmseqs failed on clustering {fname}, retrying with single step clustering"
             )
-            cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_nthreads} --single-step-clustering -s 7.5 -c 0.8 --min-seq-id 0.9"
+            cmd += " --single-step-clustering"
             result = subprocess.run(
                 cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -1439,32 +1335,59 @@ def single_ortholog_to_subclusters(
             raise ValueError(
                 f"mmseqs easy-cluster failed to create representative sequences for {fname}"
             )
-
-        shutil.copyfile(
+        _convert_fasta_headers_back(
             f"{tmp_nr90}{fname}_rep_seq.fasta",
+            f"{tmp_nr90}{fname}.mapping",
+            f"{tmp_nr90}{fname}_rep_seq_renamed.fasta",
+        )
+        tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_rep_seq_renamed.fasta")
+        shutil.copyfile(
+            f"{tmp_nr90}{fname}_rep_seq_renamed.fasta",
             f"{output_rep_seq_dir}{fname}.fasta",
         )
-
-        # if not doing subclusters
-        if True:
-            _convert_fasta_headers_back(
-                f"{tmp_nr90}{fname}_rep_seq.fasta",
-                f"{tmp_nr90}{fname}.mapping",
-                f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
-            )
-            return
+        if not create_subclusters:
+            records = [
+                record
+                for record in SeqIO.parse(
+                    f"{tmp_nr90}{fname}_rep_seq_renamed.fasta", "fasta"
+                )
+            ]
+            prod = len(records) * max([len(record.seq) for record in records])
+            if prod < max_fasta_n_sequences_times_longest_sequence:
+                shutil.copyfile(
+                    f"{tmp_nr90}{fname}_rep_seq_renamed.fasta",
+                    f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
+                )
+                for f in tmp_files_and_dirs:
+                    if os.path.exists(f):
+                        if os.path.isfile(f):
+                            os.remove(f)
+                        else:
+                            shutil.rmtree(f)
+                with open(f"{done_ortholog_files_dir}/{fname}.done", "w+") as f:
+                    f.write("done")
+                logger.info(f"{fname} done")
+                return
+            else:
+                logger.info(
+                    f"{fname} is too big to not create subclusters, creating subclusters"
+                )
 
         # clustering to get subclusters out of the representative sequences
 
-        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c 0.5 {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
+        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c {mmseqs_cluster_coverage_subclusters} {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
+        logger.debug(f"running cmd: {cmd}")
         result = subprocess.run(
             cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
+        tmp_files_and_dirs.append(f"{tmp_clu}{fname}_tmp")
+        tmp_files_and_dirs.append(f"{tmp_clu}{fname}_rep_seq.fasta")
+        tmp_files_and_dirs.append(f"{tmp_clu}{fname}_cluster.tsv")
         if result.returncode != 0:
             logger.warning(
                 f"warning: subclustering mmseqs failed on clustering {fname}, retrying with single step clustering"
             )
-            cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} --single-step-clustering -s 7.5 -c 0.5 {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
+            cmd += " --single-step-clustering"
             result = subprocess.run(
                 cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -1498,7 +1421,7 @@ def single_ortholog_to_subclusters(
         cluster_names_and_sizes = sorted(
             cluster_names_and_sizes, key=lambda x: x[1], reverse=True
         )
-        coverage = 0.9
+        coverage = 0.8
         i = 0
         total_seqs_covered = 0
         while total_seqs_covered < total_seqs * coverage:
@@ -1516,53 +1439,81 @@ def single_ortholog_to_subclusters(
         alignments_dir = os.path.join(tmp_hmmsearch, "alignments/")
         os.makedirs(profiles_dir, exist_ok=True)
         os.makedirs(alignments_dir, exist_ok=True)
-        subcluster_counter = 1
+
+        # delete previous subclusters if they exist
+        for f in os.listdir(subclusters_output_path):
+            if f.startswith(f"{fname}.sub_cluster.cluster."):
+                os.remove(subclusters_output_path + f)
+
+        for f in alignments_dir:
+            if f.startswith(f"{fname}.sub_cluster.cluster."):
+                os.remove(
+                    f"{tmp_hmmsearch}alignments/{f}",
+                )
+        for f in profiles_dir:
+            if f.startswith(f"{fname}.sub_cluster.cluster."):
+                os.remove(
+                    f"{tmp_hmmsearch}profiles/{f}",
+                )
+
+        logger.debug(f"doing {fname} subclusters")
         relevant_profiles = []
-        for i, cluster_name_and_size in enumerate(
-            cluster_names_and_sizes[:index_of_first_leftover_subcluster]
-        ):
+        for i in range(index_of_first_leftover_subcluster):
+            cluster_name_and_size = cluster_names_and_sizes[i]
+            logger.debug(f"doing {fname} subcluster {i}")
             cluster_name, cluster_size = cluster_name_and_size
             seq_ids = cluster_seq_ids[cluster_name]
-
+            subcluster_counter = i + 1
+            logger.debug(f"writing tmp subcluster {subcluster_counter} for {fname}")
             with open(
                 f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta", "w+"
             ) as subcluster_f:
                 SeqIO.write(
                     [records[seq_id] for seq_id in seq_ids], subcluster_f, "fasta"
                 )
+            tmp_files_and_dirs.append(
+                f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta"
+            )
+            logger.debug(f"converting fasta headers for {fname}")
             _convert_fasta_headers_back(
                 f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
                 f"{tmp_nr90}{fname}.mapping",
                 f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
             )
-            os.remove(
-                f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta"
-            )
+            logger.debug(f"created subcluster {subcluster_counter} for {fname}")
 
-            # make profiles
             logger.debug(f"doing {fname} qmafft")
             qmafft(
                 input_path=f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
                 output_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
+                nthreads=mmseq_nthreads,
+            )
+            tmp_files_and_dirs.append(
+                f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln"
             )
             logger.debug(f"doing {fname} hmmbuild")
             hmmbuild(
                 input_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
                 output_path=f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm",
                 name=f"{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
+                nthreads=mmseq_nthreads,
+            )
+            tmp_files_and_dirs.append(
+                f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm"
             )
             relevant_profiles.append(
                 f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm"
             )
-            subcluster_counter += 1
 
-        concatenate_files(
-            relevant_profiles,
-            f"{profiles_dir}{fname}.hmm.db",
-            track_progress=False,
-        )
+            concatenate_files(
+                relevant_profiles,
+                f"{profiles_dir}{fname}.hmm.db",
+                track_progress=False,
+            )
+            tmp_files_and_dirs.append(f"{profiles_dir}{fname}.hmm.db")
 
-        leftover_file_path = f"{leftovers_output_path}{fname}.leftovers.fasta"
+        leftover_file_path = f"{tmp_leftovers}{fname}.leftovers.fasta"
+        tmp_files_and_dirs.append(leftover_file_path)
         leftover_records = []
         for cluster_name_and_size in cluster_names_and_sizes[
             index_of_first_leftover_subcluster:
@@ -1570,24 +1521,14 @@ def single_ortholog_to_subclusters(
             cluster_name, cluster_size = cluster_name_and_size
             seq_ids = cluster_seq_ids[cluster_name]
             leftover_records.extend([records[seq_id] for seq_id in seq_ids])
-        shutil.copyfile(
-            f"{output_rep_seq_dir}{fname}.fasta",
-            f"{output_rep_seq_dir}{fname}.fasta.tmp",
-        )
-        _convert_fasta_headers_back(
-            f"{output_rep_seq_dir}{fname}.fasta.tmp",
-            f"{tmp_nr90}{fname}.mapping",
-            f"{output_rep_seq_dir}{fname}.fasta",
-        )
-        os.remove(
-            f"{output_rep_seq_dir}{fname}.fasta.tmp",
-        )
+
         if len(leftover_records) > 0:
             logger.debug(f"{fname} has {len(leftover_records)} leftovers")
             with open(
                 f"{tmp_leftovers}{fname}.leftovers.fasta.tmp", "w+"
             ) as leftover_f:
                 SeqIO.write(leftover_records, leftover_f, "fasta")
+            tmp_files_and_dirs.append(f"{tmp_leftovers}{fname}.leftovers.fasta.tmp")
             _convert_fasta_headers_back(
                 f"{tmp_leftovers}{fname}.leftovers.fasta.tmp",
                 f"{tmp_nr90}{fname}.mapping",
@@ -1597,9 +1538,9 @@ def single_ortholog_to_subclusters(
                 record for record in SeqIO.parse(leftover_file_path, "fasta")
             ]
             # assert the leftover_file_path size is not 0
-            assert (
-                os.path.getsize(leftover_file_path) > 0
-            ), f"{leftover_file_path} is empty"
+            assert os.path.getsize(leftover_file_path) > 0, (
+                f"{leftover_file_path} is empty"
+            )
             logger.debug(
                 f"{fname} has {index_of_first_leftover_subcluster} subclusters"
             )
@@ -1609,7 +1550,8 @@ def single_ortholog_to_subclusters(
                     f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta"
                 )
                 with open(
-                    f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta", "a"
+                    f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
+                    "a",
                 ) as f:
                     SeqIO.write(leftover_records, f, "fasta")
                 num_sequences_after = count_sequences_in_fasta(
@@ -1627,12 +1569,14 @@ def single_ortholog_to_subclusters(
                     raise ValueError(
                         f"{fname} num sequences before: {num_sequences_before}, num sequences after: {num_sequences_after}"
                     )
+                os.remove(f"{tmp_leftovers}{fname}.leftovers.fasta.tmp")
+
             else:
                 # hmmsearch leftovers
 
                 cmd = "hmmsearch -o /dev/null --tblout {} --max -E 10000 --cpu {} {} {}".format(
                     f"{tmp_hmmsearch}{fname}.hmmsearch",
-                    str(nthreads),
+                    mmseq_nthreads,
                     f"{profiles_dir}{fname}.hmm.db",
                     leftover_file_path,
                 )
@@ -1640,6 +1584,7 @@ def single_ortholog_to_subclusters(
                 result = subprocess.run(
                     cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
                 )
+                tmp_files_and_dirs.append(f"{tmp_hmmsearch}{fname}.hmmsearch")
                 if result.returncode != 0:
                     raise ValueError(
                         f"cmd failed: {cmd} with return code {result.returncode} and error message {result.stderr.decode(sys.stdout.encoding)}"
@@ -1729,64 +1674,68 @@ def single_ortholog_to_subclusters(
                 raise e
         else:
             logger.debug(f"{fname} has no leftovers")
-        # clean up
 
-        try:
-            shutil.rmtree(f"{tmp_nr90}{fname}_tmp")
-            shutil.rmtree(f"{tmp_clu}{fname}_tmp")
-        except Exception:
-            pass
-        os.remove(f"{tmp_nr90}{fname}_cluster.tsv")
-        os.remove(f"{tmp_nr90}{fname}_rep_seq.fasta")
-        os.remove(f"{tmp_nr90}{fname}_all_seqs.fasta")
-        os.remove(f"{tmp_clu}{fname}_cluster.tsv")
-        os.remove(f"{tmp_clu}{fname}_rep_seq.fasta")
-        os.remove(f"{tmp_clu}{fname}_all_seqs.fasta")
-        os.remove(f"{tmp_nr90}{fname}.fasta")
-        os.remove(f"{tmp_nr90}{fname}.mapping")
+        for f in tmp_files_and_dirs:
+            if os.path.exists(f):
+                if os.path.isfile(f):
+                    os.remove(f)
+                else:
+                    shutil.rmtree(f)
+
+        with open(f"{done_ortholog_files_dir}/{fname}.done", "w+") as f:
+            f.write("done")
+        logger.info(f"{fname} done")
     except Exception as e:
-        logger.error(f"{fname} failed - {str(e)}")
+        logger.error(f"{fname} failed - {str(traceback.format_exc())}")
         raise e
 
 
 def orthologs_to_subclusters(
     ortholog_fasta_dir: str,
     output_subcluster_dir: str,
-    output_leftovers_dir: str,
     output_rep_seq_dir: str,
     tmp_dir_path: str,
     nthreads=nthreads,
+    create_subclusters=True,
+    mmseqs_cluster_coverage=0.8,
+    mmseqs_cluster_identity=0.9,
+    mmseqs_cluster_coverage_subclusters=0.5,
+    max_fasta_n_sequences_times_longest_sequence=500_000_000,
 ) -> None:
     """
     Clusters ortholog fasta files into subclusters.
     First clusters the orthologs into representative sequences, then clusters the representative sequences into subclusters.
     :param ortholog_fasta_dir: path to directory containing ortholog fasta files
-    :param output_subcluster_dir: path to output directory for subclusters
-    :param output_rep_seq_dir: path to output directory for representative sequences
+    :param output_subcluster_dir: path to directory where subcluster fasta files will be saved
+    :param output_rep_seq_dir: path to directory where representative sequence fasta files will be saved
+    :param tmp_dir_path: path to directory where temporary files will be saved
     :param nthreads: number of threads to use
+    :param create_subclusters: whether to create subclusters
+    :param mmseqs_cluster_coverage: mmseqs clustering coverage
+    :param mmseqs_cluster_identity: mmseqs clustering identity
+    :param mmseqs_cluster_coverage_subclusters: mmseqs clustering coverage for subclusters
+    :param max_fasta_n_sequences_times_longest_sequence: maximum number of sequences times the longest sequence in a fasta file
     :return: None
     """
+    logger.debug("starting orthologs_to_subclusters")
     tmp_clu = os.path.join(tmp_dir_path, "CLU/")
     tmp_nr90 = os.path.join(tmp_dir_path, "NR90/")
-    tmp_leftovers = os.path.join(tmp_dir_path, "leftovers/")
     tmp_hmmsearch = os.path.join(tmp_dir_path, "hmmsearch_leftovers/")
     (
         tmp_clu,
         tmp_nr90,
-        tmp_leftovers,
         output_rep_seq_dir,
         ortholog_fasta_dir,
         output_subcluster_dir,
-        output_leftovers_dir,
+        tmp_hmmsearch,
     ) = create_paths_if_not_exists(
         [
             tmp_clu,
             tmp_nr90,
-            tmp_leftovers,
             output_rep_seq_dir,
             ortholog_fasta_dir,
             output_subcluster_dir,
-            output_leftovers_dir,
+            tmp_hmmsearch,
         ]
     )
     input_fasta_file_paths = [
@@ -1796,23 +1745,36 @@ def orthologs_to_subclusters(
     ]
     if len(input_fasta_file_paths) == 0:
         raise ValueError(f"no files with .fasta suffix found in {ortholog_fasta_dir}")
-    # assure no duplicates
-
     pool = mp.Pool(processes=nthreads // mmseq_nthreads)
-    for fp in input_fasta_file_paths:
-        pool.apply_async(
-            single_ortholog_to_subclusters,
-            args=(
-                fp,
-                output_subcluster_dir,
-                output_leftovers_dir,
-                tmp_nr90,
-                tmp_clu,
-                tmp_leftovers,
-                tmp_hmmsearch,
-                output_rep_seq_dir,
-            ),
+    logger.debug("starting single_ortholog_to_subclusters")
+
+    args = [
+        (
+            fp,
+            output_subcluster_dir,
+            tmp_nr90,
+            tmp_clu,
+            tmp_hmmsearch,
+            output_rep_seq_dir,
+            create_subclusters,
+            mmseqs_cluster_coverage,
+            mmseqs_cluster_identity,
+            mmseqs_cluster_coverage_subclusters,
+            max_fasta_n_sequences_times_longest_sequence,
+            mmseq_nthreads,
         )
-        time.sleep(0.2)  # prevents mmseqs from crashing
+        for fp in input_fasta_file_paths
+        if not os.path.exists(
+            tmp_hmmsearch
+            + "done_ortholog_files/"
+            + os.path.basename(fp).removesuffix(".fasta")
+            + ".done"
+        )
+    ]
+    logger.info(f"processing {len(args)} orthologs")
+    pool.starmap(single_ortholog_to_subclusters, args)
     pool.close()
     pool.join()
+    for directory in [tmp_clu, tmp_nr90, tmp_hmmsearch]:
+        if os.path.exists(directory):
+            shutil.rmtree(directory)

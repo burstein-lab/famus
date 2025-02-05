@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from typing import Iterable
+import json
 
 import numpy as np
 from scipy.sparse import csc_matrix, csr_matrix
@@ -109,6 +110,25 @@ class SparseDataFrame(object):
             return self.select_by_index_ids(key)
         else:
             raise TypeError("Invalid argument type")
+
+    def save(self, path: str) -> None:
+        """
+        Save the SparseDataFrame to a file.
+        """
+        coo = self.matrix.tocoo()
+        data = {
+            "row_indices": coo.row.tolist(),
+            "col_indices": coo.col.tolist(),
+            "values": coo.data.tolist(),
+            "index_ids": self.index_ids.tolist(),
+            "labels": {k: v.tolist() for k, v in self.labels.items()}
+            if self.labels
+            else None,
+            "column_names": self.column_names.tolist(),
+            "dtype": str(self.dtype),
+        }
+        with open(path, "w+") as f:
+            f.write(json.dumps(data))
 
     def _keep_indices(self, mask: Iterable[bool]) -> SparseDataFrame:
         """
@@ -247,6 +267,22 @@ class SparseDataFrame(object):
             label: np.array([index_id_to_index[index_id] for index_id in index_ids])
             for label, index_ids in labels.items()
         }
+
+
+def load(path: str) -> SparseDataFrame:
+    """
+    Load a SparseDataFrame from a file that was saved using the save function.
+    """
+    with open(path, "rb") as f:
+        data = json.loads(f.read())
+    matrix = csr_matrix((data["values"], (data["row_indices"], data["col_indices"])))
+    return SparseDataFrame(
+        matrix,
+        data["index_ids"],
+        {k: np.array(v) for k, v in data["labels"].items()} if data["labels"] else None,
+        data["column_names"],
+        dtype=np.dtype(data["dtype"].split(".")[1].removesuffix("'>")),
+    )
 
 
 def from_sparse_dict(

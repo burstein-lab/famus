@@ -10,9 +10,9 @@ from torch import optim
 from torch.nn import TripletMarginLoss
 
 from app import logger
-from app.model import VariableNet, KNet, VariableL2Net
+from app.model import VariableNet
 from app.sdfloader import SDFloader
-from torch.optim.lr_scheduler import StepLR
+
 import wandb
 
 
@@ -36,22 +36,17 @@ def _train_model(
     :param num_epochs: The number of epochs to train.
     :param batch_size: The batch size.
     :param evaluation: Whether to evaluate the model every 10th batch.
-    :return: The trained model.
+    :return: The
+     trained model.
     """
-    learn_rate = 0.005
-    min_learn_rate = learn_rate / 100
+    learn_rate = 0.001
     optimizer = optim.SGD(model.parameters(), lr=learn_rate, momentum=0.9)
     wandb.init(
         # set the wandb project where this run will be logged
         project="kegg_21",
-        # track hyperparameters and run metadata
-        config={
-            "desc": "VariableL2Net: 2 layers, 320 embedding size, L2 every layer plus before input",
-        },
     )
     model.train()
     total_batches = sdfloader.get_num_batches(batch_size)
-    opt_step = learn_rate / (total_batches * num_epochs)
     last_k_losses = []
     moving_avg_losses = []
     last_k_eval_losses = []
@@ -84,6 +79,8 @@ def _train_model(
                     batch[1].float().to(device),
                     batch[2].float().to(device),
                 )
+            else:
+                batch = (batch[0].float(), batch[1].float(), batch[2].float())
             if eval_round:
                 model.eval()
                 with torch.no_grad():
@@ -142,16 +139,16 @@ def _train_model(
             logger.info(msg)
             for i, g in enumerate(optimizer.param_groups):
                 logging_dict["lr" + str(i)] = g["lr"]
-                g["lr"] = max(g["lr"] - opt_step, min_learn_rate)
+                # g["lr"] = max(g["lr"] - opt_step, min_learn_rate)
 
-            wandb.log(logging_dict)
+            # wandb.log(logging_dict)
             batch_num += 1
             last_time = time.time()
 
         epoch_time = time.time() - start_time
         logger.info("Epoch: " + str(epoch_num) + " Epoch time: " + str(epoch_time))
         epoch_num += 1
-    wandb.finish()
+    # wandb.finish()
     return model
 
 
@@ -176,6 +173,9 @@ def train(
     checkpoint_dir_path=None,
     evaluation=True,
 ) -> None:
+    if os.path.exists(output_path):
+        logger.info("Output path already exists. Exiting.")
+        return
     if save_checkpoints and not checkpoint_dir_path:
         raise ValueError(
             "Checkpoint dir path is required when save_checkpoints is True"
@@ -214,11 +214,12 @@ def train(
     else:
         result = load_latest_checkpoint(checkpoint_dir_path)
         if result is None:
-            # snn_model = VariableL2Net(input_size)
-            snn_model = VariableNet(input_size, 3, 320)
-            # snn_model = FamusNetTwo(input_size)
+            snn_model = VariableNet(
+                input_size=input_size, num_layers=3, embedding_size=320
+            )
             snn_model.to(device)
         else:
+            logger.info("Loaded checkpoint")
             snn_model = result
     logger.info("Starting to train on device: " + str(device))
     loss = TripletMarginLoss(margin=1, p=2)

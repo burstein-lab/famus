@@ -10,6 +10,14 @@ from app import logger
 GIGABYTE = 1024**3
 
 
+def count_sequences(file: str) -> int:
+    """
+    Count the number of sequences in a fasta file.
+    """
+    with open(file) as f:
+        return sum(1 for line in f if line.startswith(">"))
+
+
 def sample_sequences(input_file: str, output_file: str, sample_size: int) -> None:
     """
     Use seqkit to sample a file of sequences.

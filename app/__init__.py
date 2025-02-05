@@ -7,6 +7,14 @@ from types import TracebackType
 import yaml
 
 
+class InactiveLogger:
+    def info(self, *args, **kwargs):
+        pass
+
+    def error(self, *args, **kwargs):
+        pass
+
+
 def now() -> str:
     """
     Get the current time as a string.
@@ -28,19 +36,23 @@ def get_cfg() -> dict:
     return cfg
 
 
-log_path = "tmp/logs/" + now()
-with open(log_path, "w+") as f:
-    pass
-logging.basicConfig(
-    filename=log_path,
-    encoding="utf-8",
-    level=logging.INFO,
-    format="%(asctime)s %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-)
-formatter = logging.Formatter("%(name)-12s: %(levelname)-8s %(message)s")
-logger = logging.getLogger()
-logger.addHandler(logging.StreamHandler(sys.stderr))
+if get_cfg()["logging"]:
+    log_path = "tmp/logs/" + now()
+    with open(log_path, "w+") as f:
+        pass
+    logging.basicConfig(
+        filename=log_path,
+        encoding="utf-8",
+        level=logging.INFO,
+        format="%(asctime)s %(message)s",
+        datefmt="%m/%d/%Y %I:%M:%S %p",
+    )
+    formatter = logging.Formatter("%(name)-12s: %(levelname)-8s %(message)s")
+    logger = logging.getLogger()
+    logger.addHandler(logging.StreamHandler(sys.stderr))
+
+else:
+    logger = InactiveLogger()
 
 
 def log_exception(

@@ -1,16 +1,11 @@
 import argparse
 import os
 
-# from math import inf
-# import subprocess
 import yaml
 
 from app import data_preprocessing as dp
 from app import get_cfg, logger
 from app.sdfloader import prepare_sdfloader
-# from app.utils import concatenate_files, now
-
-TRIPLETS_PER_LEFTOVER = 0
 
 
 def main(
@@ -42,9 +37,34 @@ def main(
     number_of_sampled_sequences_per_subcluster = cfg[
         "number_of_sampled_sequences_per_subcluster"
     ]
-
+    mmseqs_cluster_coverage = cfg["mmseqs_cluster_coverage"]
+    mmseqs_cluster_identity = cfg["mmseqs_cluster_identity"]
     fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
     samples_profiles_product_limit = cfg["samples_profiles_product_limit"]
+    create_subclusters = cfg["create_subclusters"]
+    mmseqs_cluster_coverage_subclusters = cfg["mmseqs_cluster_coverage_subclusters"]
+    max_fasta_n_sequences_times_longest_sequence = cfg[
+        "max_fasta_n_sequences_times_longest_sequence"
+    ]
+    if not (
+        isinstance(mmseqs_cluster_coverage, float) and 0 <= mmseqs_cluster_coverage <= 1
+    ):
+        raise ValueError(
+            f"mmseqs_cluster_coverage must be a float between 0 and 1. got {mmseqs_cluster_coverage}"
+        )
+    if not (
+        isinstance(mmseqs_cluster_identity, float) and 0 <= mmseqs_cluster_identity <= 1
+    ):
+        raise ValueError(
+            f"mmseqs_cluster_identity must be a float between 0 and 1. got {mmseqs_cluster_identity}"
+        )
+    if not (
+        isinstance(mmseqs_cluster_coverage_subclusters, float)
+        and 0 <= mmseqs_cluster_coverage_subclusters <= 1
+    ):
+        raise ValueError(
+            f"mmseqs_cluster_coverage_subclusters must be a float between 0 and 1. got {mmseqs_cluster_coverage_subclusters}"
+        )
     if not (
         number_of_sampled_sequences_per_subcluster == "use_all"
         or (
@@ -88,6 +108,17 @@ def main(
         raise ValueError(
             f"samples_profiles_product_limit must be a positive integer. got {samples_profiles_product_limit}"
         )
+    if not isinstance(create_subclusters, bool):
+        raise ValueError(
+            f"create_subclusters must be True or False. got {create_subclusters}"
+        )
+    if (
+        not isinstance(max_fasta_n_sequences_times_longest_sequence, int)
+        or max_fasta_n_sequences_times_longest_sequence < 1
+    ):
+        raise ValueError(
+            f"max_fasta_n_sequences_times_longest_sequence must be a positive integer. got {max_fasta_n_sequences_times_longest_sequence}"
+        )
 
     if not data_dir_path.endswith("/"):
         data_dir_path += "/"
@@ -97,10 +128,9 @@ def main(
     logger.info("Number of threads: {}".format(nthreads))
 
     if not os.path.exists(data_dir_path):
-        os.mkdir(data_dir_path)
+        os.makedirs(data_dir_path)
         state = {
             "subcluster_dir": None,
-            "leftovers_dir": None,
             "rep_seq_dir": None,
             "augmented_subcluster_dir": None,
             "full_profile_dir": None,
@@ -136,25 +166,25 @@ def main(
     if not state["subcluster_dir"] or not state["rep_seq_dir"] or not skip:
         skip = False
         subcluster_dir = os.path.join(data_dir_path, "subclusters/")
-        leftovers_dir = os.path.join(data_dir_path, "leftovers/")
         rep_seq_dir = os.path.join(data_dir_path, "representative_sequences/")
         logger.info("Creating initial subclusters")
         dp.orthologs_to_subclusters(
             ortholog_fasta_dir=input_fasta_dir_path,
             output_subcluster_dir=subcluster_dir,
-            output_leftovers_dir=leftovers_dir,
             output_rep_seq_dir=rep_seq_dir,
             tmp_dir_path=tmp_dir_path,
             nthreads=nthreads,
+            create_subclusters=create_subclusters,
+            mmseqs_cluster_coverage=mmseqs_cluster_coverage,
+            mmseqs_cluster_identity=mmseqs_cluster_identity,
+            mmseqs_cluster_coverage_subclusters=mmseqs_cluster_coverage_subclusters,
         )
         state["subcluster_dir"] = subcluster_dir
-        state["leftovers_dir"] = leftovers_dir
         state["rep_seq_dir"] = rep_seq_dir
         yaml.dump(state, open(state_file_path, "w+"))
     else:
         logger.info("Using existing subclusters")
         subcluster_dir = state["subcluster_dir"]
-        leftovers_dir = state["leftovers_dir"]
         rep_seq_dir = state["rep_seq_dir"]
 
     # Augment subclusters
@@ -190,16 +220,13 @@ def main(
     else:
         logger.info("Using existing full profile directory")
         full_profile_dir = state["full_profile_dir"]
-
     if not state["full_input_fasta"] or not skip:
         skip = False
         logger.info("Creating full input fasta")
         full_hmmsearch_input = os.path.join(data_dir_path, "full_hmmsearch_input.fasta")
-        # sampled_sequences_output = data_dir_path + "sampled_sequences.fasta"
         dp.prepare_full_hmmsearch_input(
             data_dir_path=data_dir_path,
             augmented_subcluster_dir=augmented_subcluster_dir,
-            leftovers_dir=leftovers_dir,
             tmp_dir_path=tmp_dir_path,
             input_unknown_sequences_fasta_path=unknown_sequences_fasta_path,
             output_full_hmmsearch_input_path=full_hmmsearch_input,
@@ -209,7 +236,6 @@ def main(
         )
 
         state["full_input_fasta"] = full_hmmsearch_input
-        # state["sampled_sequences_output"] = sampled_sequences_output
         yaml.dump(state, open(state_file_path, "w+"))
     else:
         logger.info("Using existing full input fasta")
@@ -323,7 +349,6 @@ def main(
         skip = False
         dp.generate_ground_truth(
             input_augmented_subclusters_fastas_dir_path=augmented_subcluster_dir,
-            input_leftovers_dir_path=leftovers_dir,
             input_unannotated_sequences_fasta_path=unknown_sequences_fasta_path,
             output_ground_truth_path=ground_truth_path,
         )
@@ -336,7 +361,7 @@ def main(
     if not state["sdf_train"] or not skip:
         logger.info("Creating sparse dataframe for training")
 
-        sdf_train_path = os.path.join(data_dir_path, "sdf_train.pkl")
+        sdf_train_path = os.path.join(data_dir_path, "sdf_train.json")
         skip = False
         dp.hmmsearch_results_to_train_sdf(
             input_split_hmmsearch_results_path=split_hmmsearch_results_path,
@@ -359,10 +384,8 @@ def main(
         sdfloader_path = os.path.join(data_dir_path, "sdfloader.pkl")
         prepare_sdfloader(
             sdf_train_path=sdf_train_path,
-            leftovers_dir=leftovers_dir,
             nthreads=nthreads,
             triplets_per_class=3000,
-            triplets_per_leftover=TRIPLETS_PER_LEFTOVER,
             output_path=sdfloader_path,
             load_stack_size=100000,
         )

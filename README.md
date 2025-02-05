@@ -1,58 +1,13 @@
-# KEGGPLANT: KEGG Protein Label Annotation using Networks and Triplets
+# FAMUS: Functional Annotation in Multiple datasets Using Siamese neural networks
 
-![kompot](kompot.png)
 
-KEGGPLANT is a Siamese Neural Network (SNN) based model that annotates protein sequences with KEGG Orthology identifiers (protein families defined by a shared function). This tool can also be used to train a model to classify any given set of protein families, given a set of fasta files that represent each family. 
+FAMUS is a Siamese Neural Network (SNN) based framework that annotates protein sequences with function. Input sequences are transformed to numeric vectors with pre-trained neural networks tailored to individual protein family databases, and then compared to sequences of those databases to find the closest match.
 
-### Please read the entirety of the following section before starting!
+This repository can also be used to train a model for any protein database by using one fasta file for each protein family, and preferrably a large number of negative examples (sequences not belonging to any family). 
 
-This tool provides two convenience modules for training (easy_preprocess_train and easy_train) and two for classification (easy_preprocess_classify and easy_classify), which automatically take care of all relevant steps of training and/or inference. If interrupted, using these modules again with the same data_dir_path parameter and overwrite_data_dir=False will attempt to resume from where the program has stopped. For this reason do not rename/remove files from the data directory the modules are using if you intend to restart an interrupted preprocessing pipeline using the same data directory, as the names of the files inside data_dir are hardcoded into the program.
+We provide one main module for training (easy_train) and one for classification (easy_classify), which automatically take care of all relevant steps of training and/or inference. If interrupted, using these modules again with the same data_dir_path parameter and overwrite_data_dir=False will attempt to resume from where the program has stopped. For this reason do not rename/remove files from the data directory the modules are using if you intend to restart an interrupted preprocessing pipeline using the same data directory, as the names of the files inside data_dir are hardcoded into the program.
 
-## Setup
 
-Option A: manual installation with conda -
-To create a conda environment for this project, run:
-
-```
-conda env create -f environment.yml
-conda activate kompot
-```
-In addition, [HMMER](http://hmmer.org/)'s hmmsearch and [mmseqs](https://github.com/soedinglab/MMseqs2) must be accessible in your PATH variable.
-
-Option B: For a singularity/apptainer image, see singularity/apptainer section below.
-
-### Singularity/Apptainer image
-
-app.def can be used to build a singularity/apptainer image with all the dependencies including python, hmmsearch and mmseqs, for example:
-
-```
-apptainer build app.sing app.def
-apptainer exec --bind .:/app --pwd /app python -m app.easy_preprocess_classify --input_fasta_file_path INPUT_FASTA_FILE_PATH --input_full_profiles_db_path INPUT_FULL_PROFILES_DB_PATH --input_sdf_train_path INPUT_SDF_TRAIN_PATH --data_dir_path DATA_DIR_PATH
-```
-Note that to use a GPU in the training or classification process you must use a proper flag (see https://docs.sylabs.io/guides/latest/user-guide/gpu.html)
-
-Using a model to classify with an NVIDIA GPU, for example:
-```
-apptainer exec --bind .:/app --nv --pwd /app python -m app.classification --sdf_train_path SDF_TRAIN_PATH --sdf_classify_path SDF_CLASSIFY_PATH --model_path MODEL_PATH -output_path OUTPUT_PATH --train_embeddings_path TRAIN_EMBEDDINGS_PATH
-```
-### Downloading the pre-generated files
-
-To download the files KOMPOT needs to classify new sequences (model, profiles and training data - see more details below), something something zenodo.
-
-### the cfg.yaml file
-
-The cfg.yaml file defines the following parameters for preprocessing, training and classification:
-- nthreads: the number of CPU cores to use for every method with optional multiprocessing - includes several preprocessing steps and training/classifying using CPUs.
-- user_device: the type of device to use for training and classification. 'cpu' or torch-compatible gpu device type e.g 'cuda'.
-- threshold: the minimal distance a sequence embedding must be from its nearest neighbor to inherit its label. Must be a positive float, or 'bootstrap' which will calculate the threshold using the training data.
-- chunksize: the number of sequences to load into memory at once during classification. A higher number will use more memory but will be faster.
-- batch_size: the number of sequences to load into memory at once during training or classification. A higher number will use more memory but will be faster.
-
-The following parameters are only relevant for the training preprocessing pipeline (see training section for more details):
-threads_per_mmseqs_job: the number of CPU cores to use per mmseqs job during subcluster generation.
-- number_of_sampled_sequences_per_subcluster: 'use_all', or a positive integer to optionally downsample each subcluster to a specified number of sequences to shorten hmmsearch time.
-- number_of_sampled_non_subcluster_sequences: 'use_all', or a positive integer to optionally downsample the number of leftover sequences to a specified number of sequences to shorten hmmsearch time. Leftover sequences are sequences that were filtered out of the input fasta files during subcluster generation.
-- number_of_sampled_unknown_sequences: 'use_all' to use all available un-annotated sequences, 'do_not_use' to not use un-annotated sequences, or a positive integer to downsample the number of un-annotated sequences to a specified number to shorten hmmsearch time. Using un-annotated sequences for training is highly recommended, preferrably about a 1:1 ratio of annotated and un-annotated sequences.
 
 ## Classifying sequences
 
