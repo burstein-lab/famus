@@ -23,6 +23,6 @@ if [ `grep -c ">" $tmp` == 1 ]
 then
 	cat $tmp
 else
-	mafft --auto --anysymbol --thread $threads $params $tmp || mafft -anysymbol --retree 1 --maxiterate 0 --nofft --parttree --thread $threads $params $tmp
+	mafft --quiet --auto --anysymbol --thread $threads $params $tmp || mafft -anysymbol --retree 1 --maxiterate 0 --nofft --parttree --thread $threads $params $tmp
 fi
 rm -f $tmp

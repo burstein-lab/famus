@@ -12,7 +12,7 @@ def main(
     input_full_profiles_dir_path: str,
     input_sdf_train_path: str,
     data_dir_path: str,
-    nthreads: int = None,
+    n_processes: int = None,
     load_sdf_from_pickle: bool = False,
 ) -> None:
     """
@@ -24,7 +24,7 @@ def main(
     If directory does not exist, it will be created.
     If directory exists and was previously used for preprocessing that was stopped before finishing,
     the script will attempt to use the existing data to save time.
-    :param nthreads: number of threads to use for parallel processing.
+    :param n_processes: number of threads to use for parallel processing.
     If not specified, will use cfg.yaml parameter.
     :return: None
     """
@@ -36,9 +36,9 @@ def main(
 
     cfg = get_cfg()
 
-    if not nthreads:
-        nthreads = cfg["nthreads"]
-    logger.info("Number of threads: {}".format(nthreads))
+    if not n_processes:
+        n_processes = cfg["n_processes"]
+    logger.info("Number of threads: {}".format(n_processes))
     state_file_path = os.path.join(data_dir_path, ".classify_preprocessing_state")
 
     if not data_dir_path.endswith("/"):
@@ -88,7 +88,7 @@ def main(
             input_fasta_path=input_fasta_file_path,
             output_full_hmmsearch_results_path=full_hmmsearch_results,
             tmp_dir_path=hmmsearch_tmp_path,
-            n_processes=nthreads,
+            n_processes=n_processes,
         )
         state["full_hmmsearch_results"] = full_hmmsearch_results
         yaml.dump(state, open(state_file_path, "w+"))
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
-        "--nthreads",
+        "--n_processes",
         type=int,
         help="Number of threads to use for parallel processing. If not specified, will use cfg.yaml parameter.s",
         required=False,
@@ -153,15 +153,15 @@ if __name__ == "__main__":
     parser.add_argument("--load_sdf_from_pickle", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
-    if args.nthreads:
-        nthreads = args.nthreads
+    if args.n_processes:
+        n_processes = args.n_processes
     else:
-        nthreads = None
+        n_processes = None
     main(
         input_fasta_file_path=args.input_fasta_file_path,
         input_full_profiles_dir_path=args.input_full_profiles_dir_path,
         input_sdf_train_path=args.input_sdf_train_path,
         data_dir_path=args.data_dir_path,
-        nthreads=args.nthreads,
+        n_processes=args.n_processes,
         load_sdf_from_pickle=args.load_sdf_from_pickle,
     )

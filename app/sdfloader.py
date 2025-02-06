@@ -26,7 +26,7 @@ class SDFloader:
         sdf: SparseDataFrame,
         triplets_per_class=3000,
         load_stack_size=100000,
-        nthreads=2,
+        n_processes=2,
     ) -> None:
         logger.info("Creating triplets")
         self.load_stack_min_len = load_stack_size
@@ -34,7 +34,7 @@ class SDFloader:
         label_to_indices = sdf.get_label_to_indices()
         manager = mp.Manager()
         label_to_indices = manager.dict(label_to_indices)
-        pool = mp.Pool(nthreads)
+        pool = mp.Pool(n_processes)
         labels = sdf.unique_labels()
         triplets = []
         self.idx_load_stacks = []  # list of sets of indices to load iteratively to limit memory usage
@@ -71,6 +71,7 @@ class SDFloader:
         curr_load_stack = set()
         logger.info("Creating load stacks")
         triplet_index = 0
+        num_triplets_in_stack = 0
         self.stack_start_indices = [0]
 
         for a, p, n in triplets:
@@ -81,16 +82,18 @@ class SDFloader:
             curr_load_stack.add(n)
             self.negatives.append(n)
             triplet_index += 1
+            num_triplets_in_stack += 1
             if len(curr_load_stack) >= load_stack_size:
                 logger.info("Adding load stack")
                 self.idx_load_stacks.append(curr_load_stack)
-                self.triplets_per_stack.append(int(len(curr_load_stack) / 3))
+                self.triplets_per_stack.append(num_triplets_in_stack)
                 self.stack_start_indices.append(triplet_index)
                 curr_load_stack = set()
+                num_triplets_in_stack = 0
 
         if len(curr_load_stack) > 0:
             self.idx_load_stacks.append(curr_load_stack)
-            self.triplets_per_stack.append(int(len(curr_load_stack) / 3))
+            self.triplets_per_stack.append(num_triplets_in_stack)
 
         del triplets
         logger.info("Created " + str(len(self.idx_load_stacks)) + " load stacks")
@@ -178,26 +181,18 @@ class SDFloader:
 
 def prepare_sdfloader(
     sdf_train_path: str,
-    nthreads: int,
+    n_processes: int,
     triplets_per_class: int,
     output_path: str,
     load_stack_size=100000,
 ) -> None:
-    """
-    Creates SDFloader object and saves it to a file.
-    :param sdf_train_path: path to the training SparseDataFrame
-    :param nthreads: number of threads to use for creating triplets
-    :param triplets_per_class: number of triplets to create for each class
-    :param output_path: path to save the SDFloader object
-    :param load_stack_size: size of the load stack
-    """
     sdf_train = load(sdf_train_path)
 
     sdfloader = SDFloader(
         sdf_train,
         triplets_per_class=triplets_per_class,
         load_stack_size=load_stack_size,
-        nthreads=nthreads,
+        n_processes=n_processes,
     )
 
     with open(output_path, "wb+") as f:

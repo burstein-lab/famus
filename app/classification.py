@@ -9,14 +9,14 @@ from torch import cdist
 
 from app import get_cfg, logger
 from app import now as now_func
-from app.model import VariableNet
+from app.model import MLP
 from app.sdf import SparseDataFrame, load
 from app.utils import even_split
-from app.model import load_model
+from app.model import load_from_state
 
 cfg = get_cfg()
 user_device = cfg["user_device"]
-nthreads = cfg["nthreads"]
+n_processes = cfg["n_processes"]
 threshold = cfg["threshold"]
 chunksize = cfg["chunksize"]  # reduce here or in cfg.yaml if GPU RAM becomes an issue
 
@@ -45,11 +45,14 @@ def load_sparse_dataframes(
 
 
 def _min_dist_ind(
-    embeddings_a: torch.Tensor, embeddings_b: torch.Tensor, device, nthreads=nthreads
+    embeddings_a: torch.Tensor,
+    embeddings_b: torch.Tensor,
+    device,
+    n_processes=n_processes,
 ) -> Tuple[np.ndarray, np.ndarray]:
     if device == "cpu":
         a_b_distances = pairwise_distances(
-            embeddings_a.cpu().numpy(), embeddings_b.cpu().numpy(), n_jobs=nthreads
+            embeddings_a.cpu().numpy(), embeddings_b.cpu().numpy(), n_jobs=n_processes
         )
         a_b_distances = torch.tensor(a_b_distances, dtype=torch.float32)
     else:
@@ -62,20 +65,15 @@ def _min_dist_ind(
 
 
 def _calc_embeddings(
-    sdf, model: VariableNet, device: Any, chunksize=chunksize, nthreads=nthreads
+    sdf, model: MLP, device: Any, chunksize=chunksize, n_processes=n_processes
 ):
     chunksize = min(chunksize, len(sdf))
     num_chunks = int(np.ceil(len(sdf) / chunksize))
     embeddings = []
     if device == "cpu":
-        torch.set_num_threads(nthreads)
+        torch.set_num_threads(n_processes)
     with torch.no_grad():
         for i in range(num_chunks):
-            logger.info(
-                "Getting chunk {}/{} for embedding calculation".format(
-                    i + 1, num_chunks
-                )
-            )
             chunk = sdf.matrix[
                 i * chunksize : min((i + 1) * chunksize, len(sdf))
             ].todense()
@@ -93,12 +91,12 @@ def _calc_embeddings(
 
 def get_embeddings(
     sdf: SparseDataFrame,
-    model: VariableNet,
+    model: MLP,
     embeddings_path: str,
     device=user_device,
     chunksize=chunksize,
     use_saved_embeddings=True,
-    nthreads=nthreads,
+    n_processes=n_processes,
 ) -> torch.Tensor:
     if embeddings_path is None or embeddings_path == "":
         use_saved_embeddings = False
@@ -107,7 +105,7 @@ def get_embeddings(
         embeddings: np.ndarray = np.load(embeddings_path)
     else:
         logger.info("Calculating embeddings")
-        embeddings = _calc_embeddings(sdf, model, device, chunksize, nthreads)
+        embeddings = _calc_embeddings(sdf, model, device, chunksize, n_processes)
         if use_saved_embeddings:
             logger.info("Saving embeddings")
             np.save(embeddings_path, embeddings)
@@ -122,7 +120,7 @@ def calculate_threshold(
     train_embeddings_path: str,
     device=user_device,
     chunksize=chunksize,
-    nthreads=nthreads,
+    n_processes=n_processes,
 ) -> float:
     """
     Calculates a threshold for classification.
@@ -131,7 +129,7 @@ def calculate_threshold(
     :param train_embeddings_path: path to load/save the training embeddings to
     :param device: device to use for classification
     :param chunksize: chunksize to use for data
-    :param nthreads: number of threads to use for classification
+    :param n_processes: number of threads to use for classification
     """
     if device == "cuda":
         if not torch.cuda.is_available():
@@ -140,14 +138,15 @@ def calculate_threshold(
             device = torch.device("cuda")
     elif device == "cpu":
         device = torch.device("cpu")
-        torch.set_num_threads(nthreads)
+        torch.set_num_threads(n_processes)
     else:
         device = torch.device(device)
 
     logger.info("device: " + str(device))
     logger.info("Loading model")
 
-    snn_model: VariableNet = load_model(model_path, eval_mode=True)
+    snn_model: MLP = load_from_state(model_path)
+    snn_model.eval()
     snn_model.to(device)
     sdf_train: SparseDataFrame
     logger.info("Loading dataframes")
@@ -160,7 +159,7 @@ def calculate_threshold(
         train_embeddings_path=train_embeddings_path,
         device=device,
         chunksize=chunksize,
-        nthreads=nthreads,
+        n_processes=n_processes,
     )
     return threshold
 
@@ -171,7 +170,7 @@ def calc_thresh(
     train_embeddings_path,
     device=user_device,
     chunksize=chunksize,
-    nthreads=nthreads,
+    n_processes=n_processes,
 ) -> None:
     """
     Generates a distance threshold for classification.
@@ -199,7 +198,7 @@ def calc_thresh(
         test_indices = split_indices[fold]
         curr_test_embeddings = train_embeddings[test_indices]
         closest_distances, closest_indices = get_closest_distances_and_indices(
-            curr_train_embeddings, curr_test_embeddings, device, nthreads
+            curr_train_embeddings, curr_test_embeddings, device, n_processes
         )
 
         y_pred = [train_labels[k] for k in closest_indices]
@@ -248,7 +247,7 @@ def classify(
     device=user_device,
     chunksize=chunksize,
     threshold=threshold,
-    nthreads=nthreads,
+    n_processes=n_processes,
     load_sdf_from_pickle=False,
 ) -> None:
     if os.path.exists(output_path):
@@ -260,14 +259,14 @@ def classify(
             device = torch.device("cuda")
     elif device == "cpu":
         device = torch.device("cpu")
-        torch.set_num_threads(nthreads)
+        torch.set_num_threads(n_processes)
     else:
         device = torch.device(device)
 
     logger.info("device: " + str(device))
     logger.info("Loading model")
 
-    snn_model: VariableNet = load_model(model_path, eval_mode=True)
+    snn_model: MLP = load_from_state(model_path)
     snn_model.to(device)
     snn_model.eval()
     sdf_train: SparseDataFrame
@@ -284,7 +283,7 @@ def classify(
             train_embeddings_path=train_embeddings_path,
             device=device,
             chunksize=chunksize,
-            nthreads=nthreads,
+            n_processes=n_processes,
         )
     else:
         try:
@@ -310,7 +309,7 @@ def classify(
     train_data_labels = np.array(train_data_labels, dtype="object")
 
     closest_distances, closest_indices = get_closest_distances_and_indices(
-        train_embeddings, classifiy_embeddings, device, nthreads
+        train_embeddings, classifiy_embeddings, device, n_processes
     )
 
     now = now_func()
@@ -329,7 +328,7 @@ def classify(
 
 
 def get_closest_distances_and_indices(
-    train_embeddings, classifiy_embeddings, device, nthreads, chunksize=chunksize
+    train_embeddings, classifiy_embeddings, device, n_processes, chunksize=chunksize
 ):
     closest_distances = np.array([], dtype=float)
     closest_indices = np.array([], dtype=int)
@@ -350,7 +349,7 @@ def get_closest_distances_and_indices(
                 train_chunk.to(device)
 
                 min_distances, min_indices = _min_dist_ind(
-                    classify_chunk, train_chunk, device, nthreads
+                    classify_chunk, train_chunk, device, n_processes
                 )
                 min_indices = min_indices + indices_offset
                 is_below_curr_closest_distance = min_distances < curr_closest_distances
@@ -374,5 +373,4 @@ def embedding_chunk_iterator(embeddings, chunksize, name=""):
     if name:
         name += " "
     for i in range(num_chunks):
-        logger.info(f"Getting {name}chunk {i + 1}/{num_chunks}")
         yield embeddings[i * chunksize : min((i + 1) * chunksize, len(embeddings))]

@@ -12,23 +12,13 @@ def main(
     input_fasta_dir_path: str,
     data_dir_path: str,
     unknown_sequences_fasta_path: str | None = None,
-    nthreads: int = None,
+    n_processes: int = None,
+    create_subclusters: bool | None = None,
 ) -> None:
-    """
-    Preprocess data for training and train a model.
-    :param input_fasta_dir_path: Path to directory containing input fasta files representing protein families.
-    Must only include fasta files.
-    :param data_dir_path: Path to directory where data will be stored. If directory does not exist, it will be created.
-    :param unknown_sequences_fasta_path: Path to fasta file containing sequences not belonging to any given protein family.
-    If directory exists and was previously used for preprocessing that was stopped before finishing, the script will
-    attempt to use the existing data to save time.
-    :param nthreads: Number of threads to use for parallel processing. If not specified, will use cfg.yaml parameter.
-    :return: None
-    """
     logger.info("Starting preprocessing")
     cfg = get_cfg()
-    if not nthreads:
-        nthreads = cfg["nthreads"]
+    if not n_processes:
+        n_processes = cfg["n_processes"]
 
     if not os.path.exists(input_fasta_dir_path):
         raise ValueError("Input fasta directory does not exist")
@@ -41,7 +31,9 @@ def main(
     mmseqs_cluster_identity = cfg["mmseqs_cluster_identity"]
     fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
     samples_profiles_product_limit = cfg["samples_profiles_product_limit"]
-    create_subclusters = cfg["create_subclusters"]
+    create_subclusters = (
+        cfg["create_subclusters"] if create_subclusters is None else create_subclusters
+    )
     mmseqs_cluster_coverage_subclusters = cfg["mmseqs_cluster_coverage_subclusters"]
     max_fasta_n_sequences_times_longest_sequence = cfg[
         "max_fasta_n_sequences_times_longest_sequence"
@@ -125,7 +117,7 @@ def main(
 
     logger.info("Input fasta directory: {}".format(input_fasta_dir_path))
     logger.info("Data directory: {}".format(data_dir_path))
-    logger.info("Number of threads: {}".format(nthreads))
+    logger.info("Number of processes: {}".format(n_processes))
 
     if not os.path.exists(data_dir_path):
         os.makedirs(data_dir_path)
@@ -173,7 +165,7 @@ def main(
             output_subcluster_dir=subcluster_dir,
             output_rep_seq_dir=rep_seq_dir,
             tmp_dir_path=tmp_dir_path,
-            nthreads=nthreads,
+            n_processes=n_processes,
             create_subclusters=create_subclusters,
             mmseqs_cluster_coverage=mmseqs_cluster_coverage,
             mmseqs_cluster_identity=mmseqs_cluster_identity,
@@ -196,7 +188,7 @@ def main(
             subclusters_dir=subcluster_dir,
             output_dir=augmented_subcluster_dir,
             tmp_dir=tmp_dir_path,
-            nthreads=nthreads,
+            n_processes=n_processes,
         )
         state["augmented_subcluster_dir"] = augmented_subcluster_dir
         yaml.dump(state, open(state_file_path, "w+"))
@@ -213,7 +205,7 @@ def main(
             subcluster_dir=augmented_subcluster_dir,
             profile_dir=full_profile_dir,
             tmp_dir_path=tmp_dir_path,
-            nthreads=nthreads,
+            n_processes=n_processes,
         )
         state["full_profile_dir"] = full_profile_dir
         yaml.dump(state, open(state_file_path, "w+"))
@@ -259,7 +251,7 @@ def main(
             input_fasta_path=full_hmmsearch_input,
             output_full_hmmsearch_results_path=full_hmmsearch_results,
             tmp_dir_path=hmmsearch_tmp_path,
-            n_processes=nthreads,
+            n_processes=n_processes,
         )
         state["full_hmmsearch_results"] = full_hmmsearch_results
         yaml.dump(state, open(state_file_path, "w+"))
@@ -314,7 +306,7 @@ def main(
             subcluster_dir=subcluster_split_fastas_dir,
             profile_dir=subcluster_split_profiles_dir,
             tmp_dir_path=tmp_dir_path,
-            nthreads=nthreads,
+            n_processes=n_processes,
         )
         state["subcluster_split_profiles_dir"] = subcluster_split_profiles_dir
         yaml.dump(state, open(state_file_path, "w+"))
@@ -335,7 +327,7 @@ def main(
             input_fasta_dir_for_scoring_path=subcluster_split_scoring_dir,
             output_split_hmmsearch_results_path=split_hmmsearch_results_path,
             tmp_path=split_hmmsearch_tmp_dir_path,
-            nthreads=nthreads,
+            n_processes=n_processes,
         )
         state["split_hmmsearch_results"] = split_hmmsearch_results_path
         yaml.dump(state, open(state_file_path, "w+"))
@@ -384,7 +376,7 @@ def main(
         sdfloader_path = os.path.join(data_dir_path, "sdfloader.pkl")
         prepare_sdfloader(
             sdf_train_path=sdf_train_path,
-            nthreads=nthreads,
+            n_processes=n_processes,
             triplets_per_class=3000,
             output_path=sdfloader_path,
             load_stack_size=100000,
@@ -421,18 +413,18 @@ if __name__ == "__main__":
         help="Path to fasta file containing sequences not belonging to any given protein family.",
     )
     parser.add_argument(
-        "--nthreads",
+        "--n_processes",
         type=int,
-        help="Number of threads to use for parallel processing. If not specified, will use cfg.yaml parameter.",
+        help="Number of processes to use for parallel processing. If not specified, will use cfg.yaml parameter.",
     )
     args = parser.parse_args()
-    if args.nthreads:
-        nthreads = args.nthreads
+    if args.n_processes:
+        n_processes = args.n_processes
     else:
-        nthreads = None
+        n_processes = None
     main(
         input_fasta_dir_path=args.input_fasta_dir_path,
         data_dir_path=args.data_dir_path,
         unknown_sequences_fasta_path=args.unknown_sequences_fasta_path,
-        nthreads=nthreads,
+        n_processes=n_processes,
     )

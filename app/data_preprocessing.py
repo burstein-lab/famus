@@ -27,8 +27,8 @@ SplitHMMSearchArgs = namedtuple(
     "SplitHMMSearchArgs", "profile_path file_for_scoring output_path"
 )
 cfg = get_cfg()
-nthreads = cfg["nthreads"]
-mmseq_nthreads = cfg["threads_per_mmseqs_job"]
+n_processes = cfg["n_processes"]
+mmseq_n_processes = cfg["processes_per_mmseqs_job"]
 number_of_sampled_sequences_per_subcluster = cfg[
     "number_of_sampled_sequences_per_subcluster"
 ]
@@ -594,7 +594,7 @@ def emit_sequences(profile_path: str, output_path: str, n_sequences: int) -> Non
         )
 
 
-def qmafft(input_path: str, output_path: str, nthreads=1) -> None:
+def qmafft(input_path: str, output_path: str, n_processes=1) -> None:
     """
     Uses mafft to align sequences and saves the alignment to a file.
     :param input_path: path to input fasta file
@@ -603,7 +603,7 @@ def qmafft(input_path: str, output_path: str, nthreads=1) -> None:
     """
     output = subprocess.check_output(
         "app/qmafft {} {} --auto --anysymbol --quiet".format(
-            input_path, nthreads
+            input_path, n_processes
         ).split(" ")
     ).decode(sys.stdout.encoding)
     if output or not os.path.exists(output_path):
@@ -613,7 +613,7 @@ def qmafft(input_path: str, output_path: str, nthreads=1) -> None:
         raise ValueError(f"{input_path} failed to align with mafft")
 
 
-def hmmbuild(input_path: str, output_path: str, name: str, nthreads=1) -> None:
+def hmmbuild(input_path: str, output_path: str, name: str, n_processes=1) -> None:
     """
     Uses hmmbuild to build a profile from an alignment and saves the profile to a file.
     :param input_path: path to input alignment file
@@ -623,7 +623,7 @@ def hmmbuild(input_path: str, output_path: str, name: str, nthreads=1) -> None:
     """
     cmd = "hmmbuild -n {} --amino --cpu {} {} {}".format(
         name,
-        nthreads,
+        n_processes,
         output_path,
         input_path,
     )
@@ -735,7 +735,7 @@ def augment_small_subclusters(
     output_dir: str,
     tmp_dir: str,
     min_sequences_per_subcluster: int = 6,
-    nthreads: int = nthreads,
+    n_processes: int = n_processes,
 ) -> None:
     """
     Augments small subclusters by creating alignments and profiles, then emitting sequences from the profiles and concatenating them with the original subcluster fasta files.
@@ -759,7 +759,7 @@ def augment_small_subclusters(
                 min_sequences_per_subcluster,
             )
         )
-    pool = mp.Pool(processes=nthreads)
+    pool = mp.Pool(processes=n_processes)
     pool.starmap(augment_single_subcluster, args)
     pool.close()
     pool.join()
@@ -865,14 +865,14 @@ def _create_subcluster_profile(
 
 
 def create_subcluster_profiles(
-    subcluster_dir: str, profile_dir: str, tmp_dir_path: str, nthreads=nthreads
+    subcluster_dir: str, profile_dir: str, tmp_dir_path: str, n_processes=n_processes
 ) -> None:
     """
     Creates profiles from subcluster fasta files.
     Will skip fasta files for which a profile already exists.
     :param subcluster_dir: path to directory containing subcluster fasta files
     :param profile_dir: path to output directory for profiles
-    :param nthreads: number of threads to use
+    :param n_processes: number of threads to use
     :return: None
     """
 
@@ -904,7 +904,7 @@ def create_subcluster_profiles(
         if os.path.basename(path).removesuffix(".fasta") not in existing_profiles
     ]
     logger.info("creating {} profiles".format(len(subcluster_paths_without_profiles)))
-    pool = mp.Pool(processes=nthreads)
+    pool = mp.Pool(processes=n_processes)
     pool.starmap(
         _create_subcluster_profile,
         iterable=[
@@ -978,8 +978,8 @@ def full_hmmsearch(
     if not os.path.exists(input_fasta_path):
         raise ValueError("input_fasta_path does not exist")
 
-    if not isinstance(nthreads, int) or nthreads < 1:
-        raise ValueError("nthreads must be a positive integer")
+    if not isinstance(n_processes, int) or n_processes < 1:
+        raise ValueError("n_processes must be a positive integer")
 
     (input_full_profiles_dir_path,) = validate_dir_paths([input_full_profiles_dir_path])
 
@@ -1115,7 +1115,7 @@ def split_profiles_hmmsearch(
     input_fasta_dir_for_scoring_path: str,
     output_split_hmmsearch_results_path: str,
     tmp_path="",
-    nthreads=nthreads,
+    n_processes=n_processes,
 ) -> None:
     """
     Runs hmmsearch on a split fasta file using a split profile.
@@ -1126,7 +1126,7 @@ def split_profiles_hmmsearch(
     :param input_split_sequence_md_path: path to pickle file containing metadata
     :param output_split_hmmsearch_results_path: path to output hmmsearch results
     :param tmp_path: path to directory where results are saved temporarily - if this method stops before finishing, use the directory from the previous run to continue
-    :param nthreads: number of threads to use
+    :param n_processes: number of threads to use
     :return: None
     """
     (
@@ -1142,7 +1142,7 @@ def split_profiles_hmmsearch(
 
     logger.info("saving data to " + tmp_path)
 
-    pool = mp.Pool(processes=nthreads)
+    pool = mp.Pool(processes=n_processes)
 
     split_fastas_files_paths = [
         input_fasta_dir_for_scoring_path + f
@@ -1270,7 +1270,7 @@ def single_ortholog_to_subclusters(
     mmseqs_cluster_identity=0.9,
     mmseqs_cluster_coverage_subclusters=0.5,
     max_fasta_n_sequences_times_longest_sequence=500_000_000,
-    mmseq_nthreads=4,
+    mmseq_n_processes=4,
 ) -> None:
     logger.info(f"processing {file_path}")
     done_ortholog_files_dir = os.path.join(tmp_hmmsearch, "done_ortholog_files")
@@ -1308,7 +1308,7 @@ def single_ortholog_to_subclusters(
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}.fasta")
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}.mapping")
         # initial clustering to remove redundancy
-        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_nthreads} -s 7.5 -c {mmseqs_cluster_coverage} --min-seq-id {mmseqs_cluster_identity}"
+        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_n_processes} -s 7.5 -c {mmseqs_cluster_coverage} --min-seq-id {mmseqs_cluster_identity}"
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_tmp")
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_rep_seq.fasta")
         logger.debug(f"running cmd: {cmd}")
@@ -1375,7 +1375,7 @@ def single_ortholog_to_subclusters(
 
         # clustering to get subclusters out of the representative sequences
 
-        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c {mmseqs_cluster_coverage_subclusters} {tmp_clu}{fname}_tmp --threads {mmseq_nthreads}"
+        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c {mmseqs_cluster_coverage_subclusters} {tmp_clu}{fname}_tmp --threads {mmseq_n_processes}"
         logger.debug(f"running cmd: {cmd}")
         result = subprocess.run(
             cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -1486,7 +1486,7 @@ def single_ortholog_to_subclusters(
             qmafft(
                 input_path=f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
                 output_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
-                nthreads=mmseq_nthreads,
+                n_processes=mmseq_n_processes,
             )
             tmp_files_and_dirs.append(
                 f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln"
@@ -1496,7 +1496,7 @@ def single_ortholog_to_subclusters(
                 input_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
                 output_path=f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm",
                 name=f"{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
-                nthreads=mmseq_nthreads,
+                n_processes=mmseq_n_processes,
             )
             tmp_files_and_dirs.append(
                 f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm"
@@ -1576,7 +1576,7 @@ def single_ortholog_to_subclusters(
 
                 cmd = "hmmsearch -o /dev/null --tblout {} --max -E 10000 --cpu {} {} {}".format(
                     f"{tmp_hmmsearch}{fname}.hmmsearch",
-                    mmseq_nthreads,
+                    mmseq_n_processes,
                     f"{profiles_dir}{fname}.hmm.db",
                     leftover_file_path,
                 )
@@ -1695,7 +1695,7 @@ def orthologs_to_subclusters(
     output_subcluster_dir: str,
     output_rep_seq_dir: str,
     tmp_dir_path: str,
-    nthreads=nthreads,
+    n_processes=n_processes,
     create_subclusters=True,
     mmseqs_cluster_coverage=0.8,
     mmseqs_cluster_identity=0.9,
@@ -1709,7 +1709,7 @@ def orthologs_to_subclusters(
     :param output_subcluster_dir: path to directory where subcluster fasta files will be saved
     :param output_rep_seq_dir: path to directory where representative sequence fasta files will be saved
     :param tmp_dir_path: path to directory where temporary files will be saved
-    :param nthreads: number of threads to use
+    :param n_processes: number of threads to use
     :param create_subclusters: whether to create subclusters
     :param mmseqs_cluster_coverage: mmseqs clustering coverage
     :param mmseqs_cluster_identity: mmseqs clustering identity
@@ -1745,7 +1745,7 @@ def orthologs_to_subclusters(
     ]
     if len(input_fasta_file_paths) == 0:
         raise ValueError(f"no files with .fasta suffix found in {ortholog_fasta_dir}")
-    pool = mp.Pool(processes=nthreads // mmseq_nthreads)
+    pool = mp.Pool(processes=n_processes // mmseq_n_processes)
     logger.debug("starting single_ortholog_to_subclusters")
 
     args = [
@@ -1761,7 +1761,7 @@ def orthologs_to_subclusters(
             mmseqs_cluster_identity,
             mmseqs_cluster_coverage_subclusters,
             max_fasta_n_sequences_times_longest_sequence,
-            mmseq_nthreads,
+            mmseq_n_processes,
         )
         for fp in input_fasta_file_paths
         if not os.path.exists(

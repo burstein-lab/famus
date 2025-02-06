@@ -40,6 +40,12 @@ if __name__ == "__main__":
         help="Number of sequences to classify at once",
     )
     parser.add_argument(
+        "--models",
+        nargs="+",
+        type=str,
+        help="Models to use for classification separated by spaces",
+    )
+    parser.add_argument(
         "--model_type",
         type=str,
         help="Type of model(s) to use (full or light)",
@@ -52,7 +58,7 @@ if __name__ == "__main__":
     cfg = get_cfg()
     device = cfg["user_device"] if args.device is None else args.device
     chunksize = cfg["chunksize"] if args.chunksize is None else args.chunksize
-    models = cfg["models"]
+    models = cfg["models"] if args.models is None else args.models
     models_type = cfg["models_type"] if args.model_type is None else args.model_type
     n_processes = (
         args.n_processes if args.n_processes is not None else cfg["n_processes"]
@@ -97,7 +103,7 @@ if __name__ == "__main__":
             input_full_profiles_dir_path=input_full_profiles_dir_path,
             input_sdf_train_path=sdf_train_path,
             data_dir_path=curr_tmp_path,
-            nthreads=n_processes,
+            n_processes=n_processes,
             load_sdf_from_pickle=args.load_sdf_from_pickle,
         )
         logger.info(f"Classifying data for {model}")
@@ -110,17 +116,18 @@ if __name__ == "__main__":
         train_embeddings_path = os.path.join(
             model_path, "data_dir", "train_embeddings.npy"
         )
+        model_state_path = os.path.join(model_path, "state.pt")
         classify(
             sdf_train_path=sdf_train_path,
             sdf_classify_path=sdf_classify_path,
-            model_path=model_path,
+            model_path=model_state_path,
             train_embeddings_path=train_embeddings_path,
             classification_embeddings_path=None,
             output_path=prediction_path,
             device=device,
             chunksize=chunksize,
             threshold=threshold,
-            nthreads=n_processes,
+            n_processes=n_processes,
             load_sdf_from_pickle=args.load_sdf_from_pickle,
         )
         logger.info(f"Deleting {model} temporary files")

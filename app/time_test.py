@@ -13,7 +13,7 @@ easy_process(
     input_full_profiles_dir_path=input_full_profiles_dir_path,
     input_sdf_train_path=input_sdf_train_path,
     data_dir_path=data_dir_path,
-    nthreads=40,
+    n_processes=40,
 )
 classify(
     sdf_train_path=input_sdf_train_path,
@@ -24,5 +24,5 @@ classify(
     output_path=data_dir_path + "output.tsv",
     device="cuda",
     threshold=0.0734,
-    nthreads=40,
+    n_processes=40,
 )

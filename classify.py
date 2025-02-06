@@ -9,7 +9,7 @@ if __name__ == "__main__":
     default_device = cfg["user_device"]
     default_chunksize = cfg["chunksize"]
     default_threshold = cfg["threshold"]
-    default_nthreads = cfg["nthreads"]
+    default_n_processes = cfg["n_processes"]
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--sdf_train_path",
@@ -21,7 +21,7 @@ if __name__ == "__main__":
         type=str,
         help="Path to the sdf file used for classification",
     )
-    parser.add_argument("--model_path", type=str, help="Path to the model file")
+    parser.add_argument("--model_path", type=str, help="Path to the model state file")
     parser.add_argument(
         "--train_embeddings_path", type=str, help="Path to the embeddings file"
     )
@@ -50,9 +50,9 @@ if __name__ == "__main__":
         help="Threshold for classification",
     )
     parser.add_argument(
-        "--nthreads",
+        "--n_processes",
         type=int,
-        default=default_nthreads,
+        default=default_n_processes,
         help="Number of threads to use for classification",
     )
     parser.add_argument("--load_sdf_from_pickle", action=argparse.BooleanOptionalAction)
@@ -68,6 +68,6 @@ if __name__ == "__main__":
         device=args.device,
         chunksize=args.chunksize,
         threshold=args.threshold,
-        nthreads=args.nthreads,
+        n_processes=args.n_processes,
         load_sdf_from_pickle=args.load_sdf_from_pickle,
     )

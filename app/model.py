@@ -7,7 +7,7 @@ import os
 torch.set_default_dtype(torch.float)
 
 
-class VariableNet(nn.Module):
+class MLP(nn.Module):
     def __init__(
         self,
         profile_directory_path=None,
@@ -30,7 +30,7 @@ class VariableNet(nn.Module):
 
         if profile_directory_path is not None:
             input_size = len(os.listdir(profile_directory_path))
-        super(VariableNet, self).__init__()
+        super(MLP, self).__init__()
         self.act = nn.SiLU()
 
         self.layers = nn.Sequential()
@@ -55,18 +55,14 @@ class VariableNet(nn.Module):
         output3 = self.forward_once(negative)
         return output1, output2, output3
 
+    def save_state(self, path):
+        torch.save(self.state_dict(), path)
 
-def load_model(model_directory_path, num_layers=3, embedding_size=320, eval_mode=True):
-    subcluster_profile_path = os.path.join(
-        model_directory_path, "data_dir", "subcluster_profiles/"
-    )
-    model = VariableNet(
-        profile_directory_path=subcluster_profile_path,
-        num_layers=num_layers,
-        embedding_size=embedding_size,
-    )
-    state_path = os.path.join(model_directory_path, "state.pt")
-    model.load_state_dict(torch.load(state_path))
-    if eval_mode:
-        model.eval()
+
+def load_from_state(state_path):
+    state = torch.load(state_path)
+    input_size = state["layers.fc0.weight"].shape[1]
+    num_inner_layers = len([k for k in state.keys() if "weight" in k]) - 1
+    model = MLP(input_size=input_size, num_layers=num_inner_layers, embedding_size=320)
+    model.load_state_dict(state)
     return model
