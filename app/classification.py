@@ -67,6 +67,7 @@ def _min_dist_ind(
 def _calc_embeddings(
     sdf, model: MLP, device: Any, chunksize=chunksize, n_processes=n_processes
 ):
+    logger.info("Calculating embeddings from scratch")
     chunksize = min(chunksize, len(sdf))
     num_chunks = int(np.ceil(len(sdf) / chunksize))
     embeddings = []
@@ -80,7 +81,6 @@ def _calc_embeddings(
             chunk_tensor = torch.tensor(
                 chunk, requires_grad=False, dtype=torch.float32
             ).to(device)
-            logger.info("embedding")
             embeddings.append(model.forward_once(chunk_tensor))
             del chunk_tensor
 
@@ -311,12 +311,6 @@ def classify(
     closest_distances, closest_indices = get_closest_distances_and_indices(
         train_embeddings, classifiy_embeddings, device, n_processes
     )
-
-    now = now_func()
-
-    closest_index_ids = sdf_train.index_ids[closest_indices]
-    with open(f"/davidb/guyshur/famus/{now}_closest_index_ids.txt", "w") as f:
-        f.write("\n".join(closest_index_ids))
 
     classifications = train_data_labels[closest_indices]
     classifications[closest_distances >= threshold] = "unknown"
