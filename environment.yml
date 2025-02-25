@@ -1,3 +1,4 @@
+name: conda_for_req
 channels:
   - conda-forge
   - bioconda
@@ -45,6 +46,7 @@ dependencies:
   - scikit-learn=1.6.1=py311h6a678d5_0
   - scipy=1.15.1=py311h24aa872_0
   - seqkit=2.9.0=h9ee0642_0
+  - seqtk=1.2=0
   - setuptools=75.8.0=py311h06a4308_0
   - sqlite=3.45.3=h5eee18b_0
   - threadpoolctl=3.5.0=py311h92b7b1e_0
@@ -56,3 +58,4 @@ dependencies:
   - xz=5.4.6=h5eee18b_1
   - yaml=0.2.5=h7b6447c_0
   - zlib=1.2.13=h5eee18b_1
+prefix: /davidb/guyshur/anaconda3/envs/conda_for_req
