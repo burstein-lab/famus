@@ -67,6 +67,7 @@ for type in "${types[@]}"; do
     if [ $? -eq 0 ]; then
       echo "Processing completed successfully, removing original tar file"
       rm "${type}_${model}.tar"
+      rm "models/${type}/${type}_${model}.tar"
     else
       echo "Warning: Processing may not have completed successfully for ${type}_${model}"
     fi
