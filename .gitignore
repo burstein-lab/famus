@@ -1,2 +1,10 @@
 **/*pycache*
 **/*pyc
+tmp/*
+!tmp/logs/
+tmp/logs/*
+!tmp/logs/.gitkeep
+models/full/*
+models/light/*
+!models/full/.gitkeep
+!models/light/.gitkeep
