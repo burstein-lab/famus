@@ -1,6 +1,7 @@
 # FAMUS: Functional Annotation Method Using Siamese neural networks
 
-FAMUS has a web interface available at https://famus-6e94e.web.app/.
+FAMUS has a web interface available at https://famus-6e94e.web.app/.  
+
 FAMUS is a Siamese Neural Network (SNN) based framework that annotates protein sequences with function. Input sequences are transformed to numeric vectors with pre-trained neural networks tailored to individual protein family databases, and then compared to sequences of those databases to find the closest match.
 
 This repository can also be used to train a model for any protein database by using one fasta file for each protein family, and preferrably a large number of negative examples (sequences not belonging to any family). 
@@ -20,6 +21,8 @@ To install with conda, run the following commands:
 Activate the environment with `conda activate famus` and install the correct pytorch version for your environment from the pytorch website via pip: https://pytorch.org/get-started/locally/
 
 ### Downloading pre-trained models
+
+If you plan on using the pre-trained models, you will need to download them from Zenodo.
 
 To download model data from Zenodo, run the following command: `bash download_model_data.bash`  
 
