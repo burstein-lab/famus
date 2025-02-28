@@ -38,7 +38,7 @@ def get_cfg() -> dict:
 
 if get_cfg()["logging"]:
     log_path = "tmp/logs/" + now()
-    with open(log_path, "w+") as f:
+    with open(log_path, "w") as f:
         pass
     logging.basicConfig(
         filename=log_path,

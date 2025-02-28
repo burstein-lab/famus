@@ -54,9 +54,6 @@ def now() -> str:
 def even_split(a: list, n: int) -> list:
     """
     Split a list into n roughly equal parts
-    :param a: list to split
-    :param n: number of parts
-    :return: list of n parts
     """
     k, m = divmod(len(a), n)
     return [a[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n)]
@@ -65,10 +62,6 @@ def even_split(a: list, n: int) -> list:
 def concatenate_files(files: list, output: str, track_progress=True) -> None:
     """
     Concatenate a list of files into a single file
-    :param files: list of files to concatenate
-    :param output: output file
-    :param track_progress: whether to track progress with tqdm
-    :return: None
     """
     with open(output, "wb+") as wfd:
         if track_progress:

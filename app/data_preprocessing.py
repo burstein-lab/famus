@@ -40,8 +40,6 @@ def validate_dir_paths(paths: list) -> tuple:
     """
     Validates that the directory paths exist and
     returns them as a tuple with a trailing slash if they don't already have one.
-    :param paths: list of paths to validate
-    :return: tuple of validated paths
     """
     paths = tuple(p + "/" if not p.endswith("/") else p for p in paths)
     validate_paths(paths)
@@ -51,8 +49,6 @@ def validate_dir_paths(paths: list) -> tuple:
 def create_paths_if_not_exists(paths: list) -> tuple:
     """
     Creates directories if they do not exist.
-    :param paths: list of paths to create
-    :return: None
     """
     paths = tuple(p + "/" if not p.endswith("/") else p for p in paths)
     for path in paths:
@@ -64,8 +60,6 @@ def create_paths_if_not_exists(paths: list) -> tuple:
 def validate_paths(paths: list) -> None:
     """
     Validates that the paths exist.
-    :param paths: list of paths to validate
-    :return: None
     """
     for path in paths:
         if not os.path.exists(path):
@@ -75,26 +69,11 @@ def validate_paths(paths: list) -> None:
 def get_subcluster_fasta_paths(path: str) -> list:
     """
     Returns a list of paths to subcluster fasta files in the given directory.
-    :param path: path to directory containing subcluster fasta files
-    :return: list of paths to subcluster fasta files
     """
     return [
         os.path.join(path, f)
         for f in os.listdir(path)
         if re.search(SUBCLUSTER_SUFFIX_PATTERN, f)
-    ]
-
-
-def get_split_subcluster_fasta_paths(path: str) -> list:
-    """
-    Returns a list of paths to split subcluster fasta files in the given directory.
-    :param path: path to directory containing split subcluster fasta files
-    :return: list of paths to split subcluster fasta files
-    """
-    return [
-        os.path.join(path, f)
-        for f in os.listdir(path)
-        if re.search(SPLIT_SUBCLUSTER_SUFFIX_PATTERN, f)
     ]
 
 
@@ -106,10 +85,6 @@ def generate_ground_truth(
     """
     Generates a ground truth dictionary for the given orthologs and unannotated sequences.
     The keys are the sequence IDs and the values are the orthology names.
-    :param input_augmented_subclusters_fastas_dir_path: path to directory containing augmented subcluster fasta files
-    :param input_unannotated_sequences_fasta_path: path to fasta file containing unannotated sequences
-    :param output_ground_truth_path: path to output ground truth pickle file
-    :return: None
     """
     (input_augmented_subclusters_fastas_dir_path,) = validate_dir_paths(
         [
@@ -172,6 +147,11 @@ def prepare_full_hmmsearch_input(
     fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
     samples_profiles_product_limit=samples_profiles_product_limit,
 ):
+    """
+    Creates a single fasta file containing sequences from subclusters and unknown sequences for hmmsearch.
+    Will try to sample number_of_sampled_sequences_per_subcluster sequences from each subcluster.
+    If the product of the number of sampled sequences and the number of profiles is greater than samples_profiles_product_limit, the number of sampled sequences will be adjusted.
+    """
     labeled_ids_per_cluster = []
     for fasta_path in get_subcluster_fasta_paths(augmented_subcluster_dir):
         labeled_ids_per_cluster.append(get_fasta_ids(fasta_path))
@@ -313,14 +293,6 @@ def hmmsearch_results_to_train_sdf(
     For sequence x profile pairs where the sequence belongs to the subcluster profile, the score is subsituted with the score on the split profile that did not contain that sequence to prevent overfitting.
     Populates the dictionary with zeros for sequence x profile pairs that are missing from the hmmsearch results.
     Creates a sparse dataframe from the dictionary.
-    :param input_split_hmmsearch_results_path: path to hmmsearch results for split profiles
-    :param input_split_subcluster_md_path: path to metadata for split profiles
-    :param input_full_hmmsearch_results_path: path to hmmsearch results for full profiles
-    :param input_full_profiles_dir_path: path to directory containing full profiles
-    :param input_all_sequences_fasta_path: path to fasta file containing all sequences
-    :param input_ground_truth_path: path to ground truth pickle file
-    :param output_sdf_path: path to output sparse dataframe pickle file
-    :return: None
     """
     validate_paths(
         [
@@ -427,15 +399,10 @@ def hmmsearch_results_to_classification_sdf(
     load_sdf_from_pickle: bool = False,
 ) -> None:
     """
-    Creates a sparse dataframe from the hmmsearch results.
+    Creates a sparse dataframe from the hmmsearch results for classification.
     Parses the hmmsearch results to a dictionary, where the keys are tuples of (sequence ID, profile ID) and the values are the scores.
     Populates the dictionary with zeros for sequence x profile pairs that are missing from the hmmsearch results.
     Creates a sparse dataframe from the dictionary.
-    :param input_hmmsearch_results_path: path to hmmsearch results
-    :param input_train_sdf_path: path to train sparse dataframe
-    :param input_fasta_path: path to fasta file containing all sequences
-    :param output_path: path to output sparse dataframe pickle file
-    :return: None
     """
     sparse_dict = {}
     seq_id_idx = 0
@@ -489,10 +456,6 @@ def sample_subclusters_for_model(
 ) -> None:
     """
     Samples sequences from subclusters and saves them to a single fasta file.
-    :param input_subcluster_fastas_dir_path: path to directory containing subcluster fasta files
-    :param output_sampled_subclusters_fasta_path: path to output fasta file
-    :param max_sequences_per_subcluster: maximum number of sequences to sample from each subcluster. If the subcluster size is less or equal to this number, all sequences are sampled. Otherwise, this number of sequences is sampled.
-    :return: None
     """
     fasta_paths = get_subcluster_fasta_paths(input_subcluster_fastas_dir_path)
     logger.info(f"found {len(fasta_paths)} subclusters")
@@ -508,15 +471,13 @@ def sample_subclusters_for_model(
         )
         sampled_records.extend(random.sample(curr_records, n_seqs_to_sample))
     logger.info(f"sampled {len(sampled_records)} sequences from subclusters")
-    with open(output_sampled_subclusters_fasta_path, "w+") as f:
+    with open(output_sampled_subclusters_fasta_path, "w") as f:
         SeqIO.write(sampled_records, f, "fasta")
 
 
 def count_sequences_in_fasta(fasta_path: str) -> int:
     """
     Counts the number of sequences in a fasta file.
-    :param fasta_path: path to fasta file
-    :return: number of sequences in the fasta file
     """
     return int(subprocess.check_output("grep -c '>' " + fasta_path, shell=True))
 
@@ -537,12 +498,8 @@ def extract_sequences_from_fasta(
 ) -> None:
     """
     Extracts sequences from a fasta file and saves them to a new fasta file.
-    :param fasta_path: path to input fasta file
-    :param ids: list of sequence IDs to extract
-    :param output_path: path to output fasta file
-    :return: None
     """
-    with open(output_path, "w+") as f:
+    with open(output_path, "w") as f:
         subprocess.call(
             f"seqkit grep -f {input_id_list_file} -o {output_path} {fasta_file}".split(
                 " "
@@ -560,15 +517,11 @@ def sample_unknown_sequences_for_model(
 ) -> None:
     """
     Samples sequences that are not in subclusters and saves them to a single fasta file.
-    :param input_unknown_sequences_fasta_path: path to fasta file containing unknown sequences
-    :param n_sequences: number of sequences to sample
-    :param output_sampled_unknown_sequences_fasta_path: path to output fasta file
-    :return: None
     """
     unknown_ids = get_fasta_ids(input_unknown_sequences_fasta_path)
     unique_ids = list(set(unknown_ids))
     sampled_ids = random.sample(unique_ids, n_sequences)
-    with open(f"{tmp_dir_path}/sampled_unknown_ids.txt", "w+") as f:
+    with open(f"{tmp_dir_path}/sampled_unknown_ids.txt", "w") as f:
         f.write("\n".join(sampled_ids))
     extract_sequences_from_fasta(
         input_unknown_sequences_fasta_path,
@@ -581,12 +534,8 @@ def sample_unknown_sequences_for_model(
 def emit_sequences(profile_path: str, output_path: str, n_sequences: int) -> None:
     """
     Generates sequences from a profile and saves them to a fasta file. Used to augment small subclusters.
-    :param profile_path: path to profile
-    :param output_path: path to output fasta file
-    :param n_sequences: number of sequences to generate
-    :return: None
     """
-    with open(output_path, "w+") as handle:
+    with open(output_path, "w") as handle:
         handle.write(
             subprocess.check_output(
                 "hmmemit -N {} {}".format(n_sequences, profile_path).split(" ")
@@ -597,9 +546,6 @@ def emit_sequences(profile_path: str, output_path: str, n_sequences: int) -> Non
 def qmafft(input_path: str, output_path: str, n_processes=1) -> None:
     """
     Uses mafft to align sequences and saves the alignment to a file.
-    :param input_path: path to input fasta file
-    :param output_path: path to output alignment file
-    :return: None
     """
     output = subprocess.check_output(
         "app/qmafft {} {} --auto --anysymbol --quiet".format(
@@ -607,7 +553,7 @@ def qmafft(input_path: str, output_path: str, n_processes=1) -> None:
         ).split(" ")
     ).decode(sys.stdout.encoding)
     if output or not os.path.exists(output_path):
-        with open(output_path, "w+") as handle:
+        with open(output_path, "w") as handle:
             handle.write(output)
     else:
         raise ValueError(f"{input_path} failed to align with mafft")
@@ -616,10 +562,6 @@ def qmafft(input_path: str, output_path: str, n_processes=1) -> None:
 def hmmbuild(input_path: str, output_path: str, name: str, n_processes=1) -> None:
     """
     Uses hmmbuild to build a profile from an alignment and saves the profile to a file.
-    :param input_path: path to input alignment file
-    :param output_path: path to output profile file
-    :param name: name of profile
-    :return: None
     """
     cmd = "hmmbuild -n {} --amino --cpu {} {} {}".format(
         name,
@@ -636,26 +578,9 @@ def hmmbuild(input_path: str, output_path: str, name: str, n_processes=1) -> Non
         )
 
 
-def copy_subcluster_fastas_to_dir(subcluster_fastas_path: str, output_dir: str) -> None:
-    """
-    Copies subcluster fastas to a directory.
-    :param subcluster_fastas_path: path to directory containing subcluster fastas
-    :param output_dir: path to output directory
-    :return: None
-    """
-    for path in tqdm(
-        get_subcluster_fasta_paths(subcluster_fastas_path),
-        desc="copying subcluster fastas",
-    ):
-        shutil.copy(path, output_dir)
-
-
 def fasta_is_small(path: str, n: int) -> int | bool:
     """
     Returns the number of sequences in the file if the fasta file contains less than n sequences and False otherwise.
-    :param path: path to fasta file
-    :param n: number of sequences below which the fasta file is considered small
-    :return: The number of sequences in the file if the fasta file contains less than n sequences, False otherwise
     """
     c = 0
     with open(path, "r") as f:
@@ -676,10 +601,6 @@ def augment_single_subcluster(
     """
     Augments a single subcluster fasta file.
     Creates alignment and profile, them emits sequences from the profile and concatenates them with the original subcluster fasta file.
-    :param subcluster_path: path to subcluster fasta file
-    :param output_dir: path to output directory
-    :param sequences_to_emit: number of sequences to emit
-    :return: None
     """
     subcluster_name = os.path.basename(subcluster_path).removesuffix(".fasta")
 
@@ -739,10 +660,6 @@ def augment_small_subclusters(
 ) -> None:
     """
     Augments small subclusters by creating alignments and profiles, then emitting sequences from the profiles and concatenating them with the original subcluster fasta files.
-    :param subclusters_dir: path to directory containing subcluster fasta files
-    :param output_dir: path to output directory
-    :param min_sequences_per_subcluster: minimum number of sequences to sample from each subcluster. If the subcluster size is less or equal to this number, all sequences are sampled. Otherwise, this number of sequences is sampled.
-    :return: total number of sequences added
     """
     subclusters_dir, output_dir = create_paths_if_not_exists(
         [subclusters_dir, output_dir]
@@ -776,11 +693,6 @@ def randomly_split_subclusters(
     Each group is two thirds of the subcluster.
     Each group is used to get a score for the remaining third, so that each sequence is scored on a profile it is not in.
     Saves which sequences should be scored on which profiles in a pickle file (the ID of the profile it is not in).
-    :param input_subclusters_fasta_dir_path: path to directory containing subcluster fasta files
-    :param output_fasta_dir_for_profiles_path: path to output directory for split profiles
-    :param output_fasta_dir_for_scoring_path: path to output directory for sequences to be scored
-    :param output_path_md: path to output pickle file containing metadata
-    :return: None
     """
     (input_subclusters_fasta_dir_path,) = validate_dir_paths(
         [input_subclusters_fasta_dir_path]
@@ -821,7 +733,7 @@ def randomly_split_subclusters(
             record_split_file = subcluster + "." + str(i) + ".fasta"
             record_split_file = output_fasta_dir_for_scoring_path + record_split_file
             with open(
-                record_split_file, "w+"
+                record_split_file, "w"
             ) as f:  # exporting the sequences that will be scored against the profile
                 parser.export_sequences(groups[i], f)
             profile_records = []  # the records of the sequences that will make the profile
@@ -837,7 +749,7 @@ def randomly_split_subclusters(
                     "test_split": i,
                     "subcluster": subcluster,
                 }
-            with open(profile_split_file, "w+") as f:
+            with open(profile_split_file, "w") as f:
                 parser.export_sequences(profile_records, f)
 
     with open(output_path_md, "wb+") as f:
@@ -849,9 +761,6 @@ def _create_subcluster_profile(
 ) -> None:
     """
     Creates a profile from a subcluster fasta file.
-    :param path: path to subcluster fasta file
-    :param full_profile_dir: path to output directory for profiles
-    :return: None
     """
     subcluster_name = os.path.basename(path).removesuffix(".fasta")
     output_hmm_path = os.path.join(full_profile_dir, subcluster_name + ".hmm")
@@ -870,10 +779,6 @@ def create_subcluster_profiles(
     """
     Creates profiles from subcluster fasta files.
     Will skip fasta files for which a profile already exists.
-    :param subcluster_dir: path to directory containing subcluster fasta files
-    :param profile_dir: path to output directory for profiles
-    :param n_processes: number of threads to use
-    :return: None
     """
 
     subcluster_paths = [
@@ -948,9 +853,6 @@ def _hmmsearch_single_profile(
 def tail(path, n=1):
     """
     Returns the last n lines of a file.
-    :param path: path to file
-    :param n: number of lines to return
-    :return: last n lines of file
     """
     return subprocess.check_output("tail -n {} {}".format(n, path).split(" ")).decode(
         sys.stdout.encoding
@@ -967,13 +869,6 @@ def full_hmmsearch(
 ) -> None:
     """
     Runs hmmsearch on a fasta file using a profile database.
-    :param input_full_profiles_dir_path: path to directory containing full profiles
-    :param input_fasta_path: path to fasta file
-    :param output_full_hmmsearch_results_path: path to output hmmsearch results
-    :param tmp_dir_path: path to temporary directory
-    :param n_processes: number of processes to use
-    :param no_filter: whether to disable the default HMMER filter
-    :return: None
     """
     if not os.path.exists(input_fasta_path):
         raise ValueError("input_fasta_path does not exist")
@@ -1035,7 +930,7 @@ def full_hmmsearch(
         logger.info("postprocessing hmmsearch results")
         with (
             open(tmp_output_path, "r") as input_handle,
-            open(output_full_hmmsearch_results_path, "w+") as output_handle,
+            open(output_full_hmmsearch_results_path, "w") as output_handle,
         ):
             while line := input_handle.readline():
                 if not line.startswith("#"):
@@ -1049,9 +944,6 @@ def full_hmmsearch(
     except Exception as e:
         logger.error("hmmsearch postprocessing failed")
         raise e
-    # for file in output_file_paths:
-    #     os.remove(file)
-    # os.remove(tmp_output_path)
 
 
 def single_split_search(
@@ -1059,10 +951,6 @@ def single_split_search(
 ) -> None:
     """
     Runs hmmsearch on a fasta file using a profile.
-    :param profile_path: path to profile
-    :param file_for_scoring: path to fasta file
-    :param output_path: path to output hmmsearch results
-    :return: None
     """
     # create fasta file with relevant sequences
     subcluster_split_name = os.path.basename(file_for_scoring).removesuffix(".fasta")
@@ -1096,7 +984,7 @@ def single_split_search(
     logger.info("{} hmmsearch done, postprocessing".format(subcluster_split_name))
     with (
         open(hmmsearch_output_path, "r") as input_handle,
-        open(tsv_output_path, "w+") as output_handle,
+        open(tsv_output_path, "w") as output_handle,
     ):
         for line in input_handle.readlines():
             if line and not line.startswith("#"):
@@ -1121,13 +1009,6 @@ def split_profiles_hmmsearch(
     Runs hmmsearch on a split fasta file using a split profile.
     The profile is roughly 2/3 of the subcluster, and the fasta file is the remaining 1/3.
     The output is used to get a score for the remaining 1/3, so that each sequence is scored on a profile it is not in.
-    :param input_split_profiles_dir_path: path to directory containing split profiles
-    :param input_fasta_dir_for_scoring_path: path to directory containing fasta files to be scored
-    :param input_split_sequence_md_path: path to pickle file containing metadata
-    :param output_split_hmmsearch_results_path: path to output hmmsearch results
-    :param tmp_path: path to directory where results are saved temporarily - if this method stops before finishing, use the directory from the previous run to continue
-    :param n_processes: number of threads to use
-    :return: None
     """
     (
         input_split_profiles_dir_path,
@@ -1185,18 +1066,14 @@ def _convert_fasta_headers(
     Used because mmseqs has ambiguity in how it handles fasta headers so this standardizes them.
     After clustering, the mapping file is used to map the substitute headers back to the original
     with _convert_fasta_headers_back.
-    :param input_fasta_path: path to input fasta file
-    :param output_fasta_path: path to output fasta file
-    :param output_mapping_file: path to output mapping file
-    :return: None
     """
     c = 0
     if not os.path.exists(input_fasta_path):
         raise ValueError(f"input {input_fasta_path} does not exist")
     with (
         open(input_fasta_path, "r") as input_handle,
-        open(output_fasta_path, "w+") as output_handle,
-        open(output_mapping_file, "w+") as mapping_handle,
+        open(output_fasta_path, "w") as output_handle,
+        open(output_mapping_file, "w") as mapping_handle,
     ):
         for line in input_handle.readlines():
             if line.startswith(">"):
@@ -1214,10 +1091,6 @@ def _convert_fasta_headers_back(
     """
     Writes a fasta file with old headers using a mapping file from the old headers to the new ones.
     Used because mmseqs has ambiguity in how it handles fasta headers so this maps them back to the original after changing them using _convert_fasta_headers.
-    :param input_fasta_path: path to input fasta file
-    :param mapping_file: path to mapping file
-    :param output_fasta_path: path to output fasta file
-    :return: None
     """
     if not os.path.exists(input_fasta_path):
         raise ValueError(f"input {input_fasta_path} does not exist")
@@ -1230,7 +1103,7 @@ def _convert_fasta_headers_back(
             mapping[line[: line.index(">")]] = line[line.index(">") + 1 :]
     with (
         open(input_fasta_path, "r") as input_handle,
-        open(output_fasta_path, "w+") as output_handle,
+        open(output_fasta_path, "w") as output_handle,
     ):
         for line in input_handle.readlines():
             if line.startswith(">"):
@@ -1247,8 +1120,7 @@ def _convert_fasta_headers_back(
 def has_duplicate_ids(fasta_path: str) -> bool:
     """
     Checks if a fasta file has duplicate sequence IDs.
-    :param fasta_path: path to fasta file
-    :return: True if there are duplicate sequence IDs, False otherwise
+
     """
     ids = set()
     for record in SeqIO.parse(fasta_path, "fasta"):
@@ -1291,7 +1163,7 @@ def single_ortholog_to_subclusters(
                 file_path,
                 f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
             )
-            with open(f"{done_ortholog_files_dir}/{fname}.done", "w+") as f:
+            with open(f"{done_ortholog_files_dir}/{fname}.done", "w") as f:
                 f.write("done")
             logger.info(f"{fname} done")
             return
@@ -1364,7 +1236,7 @@ def single_ortholog_to_subclusters(
                             os.remove(f)
                         else:
                             shutil.rmtree(f)
-                with open(f"{done_ortholog_files_dir}/{fname}.done", "w+") as f:
+                with open(f"{done_ortholog_files_dir}/{fname}.done", "w") as f:
                     f.write("done")
                 logger.info(f"{fname} done")
                 return
@@ -1466,7 +1338,7 @@ def single_ortholog_to_subclusters(
             subcluster_counter = i + 1
             logger.debug(f"writing tmp subcluster {subcluster_counter} for {fname}")
             with open(
-                f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta", "w+"
+                f"{tmp_clu}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta", "w"
             ) as subcluster_f:
                 SeqIO.write(
                     [records[seq_id] for seq_id in seq_ids], subcluster_f, "fasta"
@@ -1524,9 +1396,7 @@ def single_ortholog_to_subclusters(
 
         if len(leftover_records) > 0:
             logger.debug(f"{fname} has {len(leftover_records)} leftovers")
-            with open(
-                f"{tmp_leftovers}{fname}.leftovers.fasta.tmp", "w+"
-            ) as leftover_f:
+            with open(f"{tmp_leftovers}{fname}.leftovers.fasta.tmp", "w") as leftover_f:
                 SeqIO.write(leftover_records, leftover_f, "fasta")
             tmp_files_and_dirs.append(f"{tmp_leftovers}{fname}.leftovers.fasta.tmp")
             _convert_fasta_headers_back(
@@ -1625,7 +1495,7 @@ def single_ortholog_to_subclusters(
                     ]
                     with open(
                         f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
-                        "w+",
+                        "w",
                     ) as f:
                         SeqIO.write(relevant_records, f, "fasta")
 
@@ -1682,7 +1552,7 @@ def single_ortholog_to_subclusters(
                 else:
                     shutil.rmtree(f)
 
-        with open(f"{done_ortholog_files_dir}/{fname}.done", "w+") as f:
+        with open(f"{done_ortholog_files_dir}/{fname}.done", "w") as f:
             f.write("done")
         logger.info(f"{fname} done")
     except Exception as e:
@@ -1705,17 +1575,6 @@ def orthologs_to_subclusters(
     """
     Clusters ortholog fasta files into subclusters.
     First clusters the orthologs into representative sequences, then clusters the representative sequences into subclusters.
-    :param ortholog_fasta_dir: path to directory containing ortholog fasta files
-    :param output_subcluster_dir: path to directory where subcluster fasta files will be saved
-    :param output_rep_seq_dir: path to directory where representative sequence fasta files will be saved
-    :param tmp_dir_path: path to directory where temporary files will be saved
-    :param n_processes: number of threads to use
-    :param create_subclusters: whether to create subclusters
-    :param mmseqs_cluster_coverage: mmseqs clustering coverage
-    :param mmseqs_cluster_identity: mmseqs clustering identity
-    :param mmseqs_cluster_coverage_subclusters: mmseqs clustering coverage for subclusters
-    :param max_fasta_n_sequences_times_longest_sequence: maximum number of sequences times the longest sequence in a fasta file
-    :return: None
     """
     logger.debug("starting orthologs_to_subclusters")
     tmp_clu = os.path.join(tmp_dir_path, "CLU/")

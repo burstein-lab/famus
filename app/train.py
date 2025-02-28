@@ -38,15 +38,6 @@ def _train_model(
 ) -> MLP:
     """
     Train a model using a triplet loss function.
-    :param model: The model to train.
-    :param sdfloader: The sdfloader to use.
-    :param triplet_loss_module: The triplet loss function.
-    :param device: The device to use.
-    :param num_epochs: The number of epochs to train.
-    :param batch_size: The batch size.
-    :param evaluation: Whether to evaluate the model every 10th batch.
-    :return: The
-     trained model.
     """
     if not isinstance(num_epochs, int):
         raise ValueError("num_epochs must be an integer")

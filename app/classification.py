@@ -26,9 +26,6 @@ def load_sparse_dataframes(
 ) -> tuple:
     """
     Loads the SparseDataFrames from the given paths
-    :param sdf_train_path: path to the training SparseDataFrame
-    :param sdf_classify_path: path to the classification SparseDataFrame
-    :return: tuple of the training and classification SparseDataFrames
     """
     sdf_train: SparseDataFrame
     sdf_classify: SparseDataFrame
@@ -124,12 +121,6 @@ def calculate_threshold(
 ) -> float:
     """
     Calculates a threshold for classification.
-    :param sdf_train_path: path to the training SparseDataFrame
-    :param model_path: path to the pytorch model to use for classification
-    :param train_embeddings_path: path to load/save the training embeddings to
-    :param device: device to use for classification
-    :param chunksize: chunksize to use for data
-    :param n_processes: number of threads to use for classification
     """
     if device == "cuda":
         if not torch.cuda.is_available():

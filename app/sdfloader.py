@@ -133,8 +133,6 @@ class SDFloader:
         """
         Returns the number of batches that can be created from the triplets given the batch size.
         The number of batches refers to the number of batches for the neural network, not the number of load stacks.
-        :param batch_size: size of the batch
-        :return: number of batches
         """
         if not isinstance(batch_size, int) and batch_size > 0:
             raise ValueError("batch_size must be a positive integer")
@@ -152,11 +150,6 @@ class SDFloader:
     ) -> list:
         """
         Creates triplets for a given class.
-        :param label_to_indices: dictionary mapping labels to indices
-        :param label: label for which to create triplets
-        :param all_indices: set of all indices
-        :param num_triplets: number of triplets to create
-        :return: list of triplets
         """
         if label == "unknown":
             return []  # do not create triplets for unknown class

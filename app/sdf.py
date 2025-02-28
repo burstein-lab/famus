@@ -37,12 +37,6 @@ class SparseDataFrame(object):
     ) -> None:
         """
         SparseDataFrame constructor.
-        :param matrix: A scipy.sparse.csr_matrix or scipy.sparse.csc_matrix
-        :param index_ids: An iterable of unique index ids for the rows of the matrix
-        :param labels: A dict mapping index ids to iterable of labels
-        :param column_names: An iterable of column names for the columns of the matrix
-        :param dtype: The data type of the matrix
-        :return: A SparseDataFrame object
         """
         if not isinstance(matrix, csr_matrix) and not isinstance(matrix, csc_matrix):
             raise TypeError(
@@ -127,7 +121,7 @@ class SparseDataFrame(object):
             "column_names": self.column_names.tolist(),
             "dtype": str(self.dtype),
         }
-        with open(path, "w+") as f:
+        with open(path, "w") as f:
             f.write(json.dumps(data))
 
     def _keep_indices(self, mask: Iterable[bool]) -> SparseDataFrame:
