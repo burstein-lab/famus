@@ -25,7 +25,7 @@ Activate the environment with `conda activate famus` and install the correct pyt
 If you plan on using the pre-trained models, you will need to download them from Zenodo (https://zenodo.org/uploads/14941373).
 
 To download all model data from Zenodo, run the following command: `bash download_model_data.bash`.   
- - Alternatively you can manually download only the TAR files for the models you are interested in and place them in the top level of the repository.
+ - Alternatively you can manually download only the TAR files for the models you are interested in and place them in the top level of the repository. Verify that the TAR files are named correctly (e.g. full_kegg.tar, as they appear in Zenodo).
 
 To extract the pre-trained models, run the following command: `bash extract_model_data.bash`
 
