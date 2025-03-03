@@ -15,19 +15,6 @@ def main(
     n_processes: int = None,
     load_sdf_from_pickle: bool = False,
 ) -> None:
-    """
-    Runs preprocessing before classification.
-    :param input_fasta_file_path: path to input fasta file
-    :param input_full_profiles_db_path: path to input full profiles db
-    :param input_sdf_train_path: path to input train SparseDataFrame
-    :param data_dir_path: path to directory where data will be stored.
-    If directory does not exist, it will be created.
-    If directory exists and was previously used for preprocessing that was stopped before finishing,
-    the script will attempt to use the existing data to save time.
-    :param n_processes: number of threads to use for parallel processing.
-    If not specified, will use cfg.yaml parameter.
-    :return: None
-    """
     logger.info("Starting preprocessing")
     logger.info("Input fasta: {}".format(input_fasta_file_path))
     logger.info("Input full profiles dir: {}".format(input_full_profiles_dir_path))
@@ -38,7 +25,7 @@ def main(
 
     if not n_processes:
         n_processes = cfg["n_processes"]
-    logger.info("Number of threads: {}".format(n_processes))
+    logger.info("Number of processes: {}".format(n_processes))
     state_file_path = os.path.join(data_dir_path, ".classify_preprocessing_state")
 
     if not data_dir_path.endswith("/"):
@@ -148,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_processes",
         type=int,
-        help="Number of threads to use for parallel processing. If not specified, will use cfg.yaml parameter.s",
+        help="Number of processes to use for parallel processing. If not specified, will use cfg.yaml parameter.s",
         required=False,
     )
     parser.add_argument("--load_sdf_from_pickle", action=argparse.BooleanOptionalAction)
