@@ -8,6 +8,8 @@ def main():
     for model_type in ["full", "light"]:
         model_type_root_path = os.path.join(models_root_path, model_type)
         for model in os.listdir(model_type_root_path):
+            if model.endswith(".gitkeep"):
+                continue
             print(f"Checking {model_type} {model}")
             model_path = os.path.join(model_type_root_path, model)
             data_dir_path = os.path.join(model_path, "data_dir")
