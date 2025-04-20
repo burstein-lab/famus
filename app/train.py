@@ -9,7 +9,7 @@ from torch import optim
 from torch.nn import TripletMarginLoss
 
 from app import logger
-from app.model import MLP, load_from_state
+from app.model import MLP, VariableNet, load_from_state
 from app.sdfloader import SDFloader
 
 
@@ -77,9 +77,25 @@ def _train_model(
         batch_num = 0
         batch: tuple
         for batch in sdfloader.triplet_batch_generator(batch_size=batch_size):
-            if batch_num < start_batch and epoch_num == start_epoch:
+            batch = (
+                batch[0].float().to(device),
+                batch[1].float().to(device),
+                batch[2].float().to(device),
+            )
+            distances_a_p = torch.sqrt(torch.sum((batch[0] - batch[1]) ** 2, dim=1))
+            distances_a_n = torch.sqrt(torch.sum((batch[0] - batch[2]) ** 2, dim=1))
+            logger.info(
+                f"Epoch: {epoch_num} Batch: {batch_num}/{total_batches} Distances: {torch.mean(distances_a_p)} {torch.mean(distances_a_n)}"
+            )
+            if batch_num < start_batch and epoch_num <= start_epoch:
+                logger.info("Skipping completed batches..")
+
                 batch_num += 1
                 continue
+            # calculate euclidean distance
+            # between the ancor and positive samples
+            # and between the ancor and negative samples
+
             if batch_num == start_batch and epoch_num == start_epoch:
                 logger.info(
                     f"Starting training from checkpoint epoch {epoch_num} and batch {batch_num}"
@@ -208,7 +224,9 @@ def train(
     logger.info("device:" + str(device))
     input_size = sdfloader.sdf.matrix.shape[1]
     logger.info("input size: " + str(input_size))
-
+    logger.info(f"Learning rate: {lr}")
+    logger.info(f"Batch size: {batch_size}")
+    logger.info(f"Number of epochs: {num_epochs}")
     if checkpoint_dir_path:
         if checkpoint_data := get_latest_checkpoint_path(checkpoint_dir_path):
             state_path, latest_epoch, latest_batch = (
@@ -250,4 +268,3 @@ def train(
     model.save_state(output_path)
     logger.info("Training complete")
     logger.info("Model saved to " + output_path)
-    return

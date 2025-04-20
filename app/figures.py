@@ -20,9 +20,9 @@ plt.rcParams["xtick.labelsize"] = 20
 
 output_path = "reg.png"
 
-orthologs_fasta_path = "/davidb/guyshur/prepare_database_fasta_dirs/tigrfam_filtered_2/"
-subcluster_fastas_path = "data/tigrfam/subclusters/"
-all_sequences_path = "/davidb/bio_db/UniProt/UniRef90/2024-01-17/uniref90.fasta"
+orthologs_fasta_path = "/davidb/bio_db/Kegg/2021-05-14/FAA/"
+subcluster_fastas_path = "data/kegg_2021_020524/subclusters/"
+all_sequences_path = "/davidb/guyshur/kegg_data/2021/all_kegg.fasta"
 
 if os.path.exists("ko_subcluster_size_distribution_data.pkl"):
     with open("ko_subcluster_size_distribution_data.pkl", "rb") as f:
@@ -45,7 +45,7 @@ else:
         for f in os.listdir(orthologs_fasta_path)
         if f.endswith(".list")
         and os.path.getsize(
-            os.path.join(orthologs_fasta_path, f.removesuffix("list") + "fasta")
+            os.path.join(orthologs_fasta_path, f.removesuffix("list") + "faa")
         )
         > 0
     ]
@@ -125,7 +125,7 @@ sns.barplot(
     edgecolor="black",
 )
 ax.set_xticklabels(
-    ["Subclusrers only", "All labeled", "Total"], rotation=30, ha="right"
+    ["Sub-families only", "All labeled", "Total"], rotation=30, ha="right"
 )
 ax.text(x=-0.125, y=1, s="A", fontsize=30, ha="right", va="top", transform=ax.transAxes)
 
@@ -148,13 +148,13 @@ log_n_lines_list_kos = np.log10(n_lines_list_kos)
 sns.kdeplot(
     x=log_n_lines_list_kos,
     ax=ax2,
-    shade=True,
+    fill=True,
     color=palette[1],
     linewidth=1,
     alpha=1,
     edgecolor="black",
 )
-x_max_rounded = int(log_n_lines_list_kos.max())
+x_max_rounded = int(log_n_lines_list_kos.max()) + 1
 # xticks = [1]
 # xticklables = ["$10^0$"]
 # for i in range(x_max_rounded):
@@ -192,7 +192,7 @@ xticklabels = ax2.get_xticklabels()
 ax2.text(
     x=-0.125, y=1, s="B", fontsize=30, ha="right", va="top", transform=ax2.transAxes
 )
-plt.savefig("bar_and_ko_sizes.png", dpi=300, bbox_inches="tight")
+plt.savefig("bar_and_ko_sizes.svg", bbox_inches="tight")
 
 ko_to_ko_size = {
     k: v for k, v in ko_to_ko_size.items() if k in ko_to_number_of_subclusters
@@ -203,8 +203,8 @@ ko_sizes = np.log10(ko_sizes)
 ko_n_subclusters = np.array([ko_to_number_of_subclusters[ko] for ko in kos])
 ko_n_subclusters = np.log10(ko_n_subclusters)
 
-plt.suptitle("KO size vs number of subclusters")
-plt.savefig("scatter.png", dpi=300, bbox_inches="tight")
+plt.suptitle("KO size vs number of sub-families")
+plt.savefig("scatter.svg", bbox_inches="tight")
 # subplot 3: KO size vs number of subclusters kde
 jp: sns.JointGrid = sns.jointplot(
     x=ko_sizes,
@@ -214,9 +214,10 @@ jp: sns.JointGrid = sns.jointplot(
     # levels=[0.005, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
     levels=10,
     height=8,
+    color=palette[1],
 )
-jp.ax_joint.set_xlabel("N sequences in KO")
-jp.ax_joint.set_ylabel("N subclusters in KO")
+jp.ax_joint.set_xlabel("KO size")
+jp.ax_joint.set_ylabel("Number of sub-families in KO")
 x_max_rounded = int(ko_sizes.max())
 y_max_rounded = int(ko_n_subclusters.max())
 # jp.ax_joint.set_xticks(
@@ -294,4 +295,4 @@ jp.ax_joint.scatter(
 # increase space between plots
 jp.fig.subplots_adjust(hspace=0.4, wspace=0.4)
 
-plt.savefig("kde.png", dpi=300, bbox_inches="tight")
+plt.savefig("kde.svg", bbox_inches="tight")

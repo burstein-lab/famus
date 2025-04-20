@@ -40,8 +40,6 @@ class FastaParser(object):
     def get_random_ids(self, n: int) -> list:
         """
         Returns a list of n random ids from the fasta file.
-        :param n: number of ids to return.
-        :return: list of n random ids from the fasta file.
         """
         if not isinstance(n, int) and n > 0:
             raise TypeError("n must be a positive integer")
@@ -55,8 +53,6 @@ class FastaParser(object):
     def export_sequences(self, ids_to_export: list, handle: TextIO) -> None:
         """
         Exports the sequences with the given ids to the given handle.
-        :param ids_to_export: list of ids to export.
-        :param handle: handle to export the sequences to.
         :return: None
         """
         pid = str(os.getpid())
@@ -66,9 +62,9 @@ class FastaParser(object):
             raise ValueError(
                 "ids_to_export contains ids that are not in the fasta file"
             )
-        with open(f"tmp/{pid}.allseq", "w+") as f:
+        with open(f"tmp/{pid}.allseq", "w") as f:
             f.write(self.fasta_file_content)
-        with open(f"tmp/{pid}.relseq", "w+") as f:
+        with open(f"tmp/{pid}.relseq", "w") as f:
             f.write("\n".join(ids_to_export))
         cmd = f"seqtk subseq tmp/{pid}.allseq tmp/{pid}.relseq"
         handle.write(subprocess.check_output(cmd.split(" ")).decode())
@@ -78,8 +74,6 @@ class FastaParser(object):
     def export_random_sequences(self, n: int, handle: TextIO) -> None:
         """
         Exports n random sequences to the given handle.
-        :param n: number of sequences to export.
-        :param handle: handle to export the sequences to.
         """
         ids_to_export = self.get_random_ids(n)
         self.export_sequences(ids_to_export, handle)

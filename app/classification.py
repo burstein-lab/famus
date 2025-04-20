@@ -257,7 +257,7 @@ def classify(
     logger.info("device: " + str(device))
     logger.info("Loading model")
 
-    snn_model: MLP = load_from_state(model_path)
+    snn_model: MLP = load_from_state(model_path, device=device)
     snn_model.to(device)
     snn_model.eval()
     sdf_train: SparseDataFrame
