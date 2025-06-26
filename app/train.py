@@ -1,24 +1,19 @@
 import pickle
+import time
 from typing import Any
 import os
 import re
-from typing import Tuple
 
+import numpy as np
 import torch
 from torch import optim
 from torch.nn import TripletMarginLoss
 
 from app import logger
-from app.model import MLP, VariableNet, load_from_state
+from app.model import MLP
 from app.sdfloader import SDFloader
 
-
-def save_state(model: MLP, path: str, batch_num: int, epoch_num: int) -> None:
-    epoch_dir = os.path.join(path, str(f"epoch_{epoch_num}"))
-    os.makedirs(epoch_dir, exist_ok=True)
-    save_path = os.path.join(epoch_dir, f"{batch_num}_checkpoint.pt")
-    model.save_state(save_path)
-    logger.info(f"Saved state to {save_path}")
+import wandb
 
 
 def _train_model(
@@ -30,82 +25,52 @@ def _train_model(
     num_epochs=10,
     batch_size=32,
     save_checkpoints=True,
-    save_every=100_000,
     evaluation=True,
-    lr=0.001,
-    start_epoch=0,
-    start_batch=0,
 ) -> MLP:
     """
     Train a model using a triplet loss function.
+    :param model: The model to train.
+    :param sdfloader: The sdfloader to use.
+    :param triplet_loss_module: The triplet loss function.
+    :param device: The device to use.
+    :param num_epochs: The number of epochs to train.
+    :param batch_size: The batch size.
+    :param evaluation: Whether to evaluate the model every 10th batch.
+    :return: The
+     trained model.
     """
-    if not isinstance(num_epochs, int):
-        raise ValueError("num_epochs must be an integer")
-    if not num_epochs > 0:
-        raise ValueError("num_epochs must be greater than 0")
-    if not isinstance(batch_size, int):
-        raise ValueError("batch_size must be an integer")
-    if not batch_size > 0:
-        raise ValueError("batch_size must be greater than 0")
-    if not isinstance(save_checkpoints, bool):
-        raise ValueError("save_checkpoints must be a boolean")
-    if not isinstance(evaluation, bool):
-        raise ValueError("evaluation must be a boolean")
-    if not isinstance(save_every, int):
-        raise ValueError("save_every must be an integer")
-    if not save_every > 0:
-        raise ValueError("save_every must be greater than 0")
-    if not isinstance(lr, float):
-        raise ValueError("lr must be a float")
-    if not lr > 0:
-        raise ValueError("lr must be greater than 0")
-    if not isinstance(start_epoch, int):
-        raise ValueError("start_epoch must be an integer")
-    if not start_epoch >= 0:
-        raise ValueError("start_epoch must be greater than or equal to 0")
-    if not isinstance(start_batch, int):
-        raise ValueError("start_batch must be an integer")
-    if not start_batch >= 0:
-        raise ValueError("start_batch must be greater than or equal to 0")
-
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+    learn_rate = 0.001
+    optimizer = optim.SGD(model.parameters(), lr=learn_rate, momentum=0.9)
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="kegg_21",
+    )
     model.train()
     total_batches = sdfloader.get_num_batches(batch_size)
+    last_k_losses = []
+    moving_avg_losses = []
+    last_k_eval_losses = []
+    moving_avg_eval_losses = []
     eval_round = False
-    steps_taken = 1
-    for epoch_num in range(start_epoch, num_epochs):
-        batch_num = 0
+    x_for_moving_avg = []
+    x_for_moving_avg_eval = []
+    x = 0
+
+    for epoch_num in range(num_epochs):
+        start_time = time.time()
+        t_loss = 0
+        batch_num = 1
+        last_time = time.time()
         batch: tuple
+        logging_dict = {"epoch": epoch_num}
         for batch in sdfloader.triplet_batch_generator(batch_size=batch_size):
-            batch = (
-                batch[0].float().to(device),
-                batch[1].float().to(device),
-                batch[2].float().to(device),
-            )
-            distances_a_p = torch.sqrt(torch.sum((batch[0] - batch[1]) ** 2, dim=1))
-            distances_a_n = torch.sqrt(torch.sum((batch[0] - batch[2]) ** 2, dim=1))
-            logger.info(
-                f"Epoch: {epoch_num} Batch: {batch_num}/{total_batches} Distances: {torch.mean(distances_a_p)} {torch.mean(distances_a_n)}"
-            )
-            if batch_num < start_batch and epoch_num <= start_epoch:
-                logger.info("Skipping completed batches..")
-
-                batch_num += 1
-                continue
-            # calculate euclidean distance
-            # between the ancor and positive samples
-            # and between the ancor and negative samples
-
-            if batch_num == start_batch and epoch_num == start_epoch:
-                logger.info(
-                    f"Starting training from checkpoint epoch {epoch_num} and batch {batch_num}"
-                )
-            if save_checkpoints and steps_taken % save_every == 0:
-                save_state(model, checkpoint_dir_path, batch_num, epoch_num)
-            if (
-                evaluation and batch_num % 10 == 0
-            ):  # the dataset isn't shuffled after each epoch and batch size is static, so it's unnecessary to separate the evaluation set from the training set
+            x += 1
+            logging_dict["batch"] = x
+            if save_checkpoints and x % 10_000 == 0:
+                torch.save(model, checkpoint_dir_path + str(x) + "_checkpoint.pt")
+            if evaluation and batch_num % 10 == 0:
                 eval_round = True
+                logger.info("Evaluating model")
             else:
                 eval_round = False
             if not device == "cpu":
@@ -126,57 +91,76 @@ def _train_model(
             ancor_preds, positive_preds, negative_preds = preds[0], preds[1], preds[2]
             loss = triplet_loss_module(ancor_preds, positive_preds, negative_preds)
             if not eval_round:
+                loss_item = loss.item()
+                logging_dict["training loss"] = loss_item
+                t_loss += loss_item
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                last_k_losses.append(loss.item())
+                if len(last_k_losses) >= 1000:
+                    last_k_losses = last_k_losses[-1000:]
+                    moving_avg_loss = np.mean(last_k_losses)
+                    moving_avg_losses.append(moving_avg_loss)
+                    x_for_moving_avg.append(x)
+                    logging_dict["moving average loss"] = moving_avg_loss
             else:
                 eval_loss = loss.item()
-                msg = (
-                    "Epoch: "
-                    + str(epoch_num)
-                    + " Batch: "
-                    + str(batch_num)
-                    + "/"
-                    + str(total_batches)
-                    + " Loss: "
-                    + str(eval_loss)
+                last_k_eval_losses.append(eval_loss)
+                logging_dict["eval loss"] = eval_loss
+                if len(last_k_eval_losses) >= 1000:
+                    last_k_eval_losses = last_k_eval_losses[-1000:]
+                    moving_avg_eval_loss = np.mean(last_k_eval_losses)
+                    moving_avg_eval_losses.append(moving_avg_eval_loss)
+                    x_for_moving_avg_eval.append(x)
+                    logging_dict["moving average eval loss"] = moving_avg_eval_loss
+            batch_time = time.time() - last_time
+            logging_dict["batch time"] = batch_time
+            msg = (
+                "Epoch: "
+                + str(epoch_num)
+                + " Batch: "
+                + str(batch_num)
+                + "/"
+                + str(total_batches)
+                + " Batch time: "
+                + str(batch_time)
+                + " Loss: "
+                + str(loss)
+            )
+            if len(last_k_losses) >= 1000:
+                msg += " Moving average loss: " + str(moving_avg_loss)
+            if len(last_k_eval_losses) >= 1000:
+                msg += " Moving average eval loss: " + str(moving_avg_eval_loss)
+            if eval_round:
+                msg += " optimizer learning rates: " + str(
+                    [g["lr"] for g in optimizer.param_groups]
                 )
-                logger.info(msg)
+            logger.info(msg)
+            for i, g in enumerate(optimizer.param_groups):
+                logging_dict["lr" + str(i)] = g["lr"]
+                # g["lr"] = max(g["lr"] - opt_step, min_learn_rate)
+
+            # wandb.log(logging_dict)
             batch_num += 1
-            steps_taken += 1
+            last_time = time.time()
+
+        epoch_time = time.time() - start_time
+        logger.info("Epoch: " + str(epoch_num) + " Epoch time: " + str(epoch_time))
+        epoch_num += 1
+    # wandb.finish()
     return model
 
 
-def get_latest_checkpoint(checkpoint_dir_path: str) -> Tuple[int, int]:
-    if not os.path.exists(checkpoint_dir_path):
-        raise ValueError(f"Path {checkpoint_dir_path} does not exist")
-    epochs = os.listdir(checkpoint_dir_path)
-    if not epochs:
-        return None
-    pattern = re.compile(r"epoch_\d+")
-    filtered = [e for e in epochs if pattern.match(e)]
-    latest_epoch = max([int(e.split("_")[1]) for e in filtered])
-    epoch_dir = os.path.join(checkpoint_dir_path, f"epoch_{latest_epoch}")
-    files = os.listdir(epoch_dir)
+def load_latest_checkpoint(checkpoint_dir_path: str) -> MLP:
+    files = os.listdir(checkpoint_dir_path)
     pattern = re.compile(r"\d+_checkpoint\.pt")
     files = [f for f in files if pattern.match(f)]
     if not files:
         return None
-    latest_checkpoint = max([int(f.split("_")[0]) for f in files])
-    return latest_epoch, latest_checkpoint
-
-
-def get_latest_checkpoint_path(checkpoint_dir_path: str) -> str:
-    if latest_epoch_and_checkpoint := get_latest_checkpoint(checkpoint_dir_path):
-        return (
-            os.path.join(
-                checkpoint_dir_path,
-                f"epoch_{latest_epoch_and_checkpoint[0]}/{latest_epoch_and_checkpoint[1]}_checkpoint.pt",
-            ),
-            latest_epoch_and_checkpoint[0],
-            latest_epoch_and_checkpoint[1],
-        )
-    return None
+    files = sorted(files, key=lambda x: int(x.split("_")[0]))
+    latest_checkpoint = files[-1]
+    return torch.load(checkpoint_dir_path + latest_checkpoint)
 
 
 def train(
@@ -188,7 +172,7 @@ def train(
     save_checkpoints=False,
     checkpoint_dir_path=None,
     evaluation=True,
-    save_every=100_000,
+    save_every=10_000,
     lr=0.001,
 ) -> None:
     if os.path.exists(output_path):
@@ -199,7 +183,8 @@ def train(
             "Checkpoint dir path is required when save_checkpoints is True"
         )
     if checkpoint_dir_path:
-        os.makedirs(checkpoint_dir_path, exist_ok=True)
+        if not os.path.exists(checkpoint_dir_path):
+            os.mkdir(checkpoint_dir_path)
     output_dir_path = os.path.dirname(output_path)
     if not os.path.exists(output_dir_path):
         raise ValueError(f"Path {output_dir_path} does not exist")
@@ -214,7 +199,7 @@ def train(
 
     if device == "cuda":
         if not torch.cuda.is_available():
-            raise ValueError("cuda is not available in this environment")
+            raise ValueError("Cuda is not available")
         device = torch.device("cuda")
 
     with open(sdfloader_path, "rb") as f:
@@ -224,29 +209,18 @@ def train(
     logger.info("device:" + str(device))
     input_size = sdfloader.sdf.matrix.shape[1]
     logger.info("input size: " + str(input_size))
-    logger.info(f"Learning rate: {lr}")
-    logger.info(f"Batch size: {batch_size}")
-    logger.info(f"Number of epochs: {num_epochs}")
-    if checkpoint_dir_path:
-        if checkpoint_data := get_latest_checkpoint_path(checkpoint_dir_path):
-            state_path, latest_epoch, latest_batch = (
-                checkpoint_data[0],
-                checkpoint_data[1],
-                checkpoint_data[2],
-            )
-            snn_model = load_from_state(state_path)
-            logger.info(f"Loaded model from {state_path}")
-        else:
+    if not checkpoint_dir_path:
+        # snn_model = VariableL2Net(input_size)
+        snn_model = MLP(input_size, 3, 320)
+        snn_model.to(device)
+    else:
+        result = load_latest_checkpoint(checkpoint_dir_path)
+        if result is None:
             snn_model = MLP(input_size=input_size, num_layers=3, embedding_size=320)
             snn_model.to(device)
-            latest_epoch = 0
-            latest_batch = 0
-    else:
-        snn_model = MLP(input_size=input_size, num_layers=3, embedding_size=320)
-        snn_model.to(device)
-        latest_epoch = 0
-        latest_batch = 0
-
+        else:
+            logger.info("Loaded checkpoint")
+            snn_model = result
     logger.info("Starting to train on device: " + str(device))
     loss = TripletMarginLoss(margin=1, p=2)
     logger.info("Training model")
@@ -260,11 +234,5 @@ def train(
         evaluation=evaluation,
         save_checkpoints=save_checkpoints,
         checkpoint_dir_path=checkpoint_dir_path,
-        start_epoch=latest_epoch,
-        start_batch=latest_batch,
-        save_every=save_every,
-        lr=lr,
     )
-    model.save_state(output_path)
-    logger.info("Training complete")
-    logger.info("Model saved to " + output_path)
+    torch.save(model, output_path)

@@ -193,7 +193,7 @@ def main():
         device=device,
         num_epochs=num_epochs,
         batch_size=batch_size,
-        save_checkpoints=True,
+        save_checkpoints=False,
         checkpoint_dir_path=checkpoints_dir_path,
         evaluation=True,
         save_every=save_every,
