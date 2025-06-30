@@ -8,9 +8,17 @@ import torch
 from torch import optim
 from torch.nn import TripletMarginLoss
 
-from app import logger
+from app import logger, get_cfg, now
 from app.model import MLP, VariableNet, load_from_state
 from app.sdfloader import SDFloader
+
+cfg = get_cfg()
+log_to_wandb = cfg.get("log_to_wandb")
+wandb_project = cfg.get("wandb_project", "famus")
+wand_api_key_path = cfg.get("wandb_api_key_path", None)
+
+if log_to_wandb:
+    import wandb
 
 
 def save_state(model: MLP, path: str, batch_num: int, epoch_num: int) -> None:
@@ -35,6 +43,7 @@ def _train_model(
     lr=0.001,
     start_epoch=0,
     start_batch=0,
+    log_to_wandb=False,
 ) -> MLP:
     """
     Train a model using a triplet loss function.
@@ -82,11 +91,7 @@ def _train_model(
                 batch[1].float().to(device),
                 batch[2].float().to(device),
             )
-            distances_a_p = torch.sqrt(torch.sum((batch[0] - batch[1]) ** 2, dim=1))
-            distances_a_n = torch.sqrt(torch.sum((batch[0] - batch[2]) ** 2, dim=1))
-            logger.info(
-                f"Epoch: {epoch_num} Batch: {batch_num}/{total_batches} Distances: {torch.mean(distances_a_p)} {torch.mean(distances_a_n)}"
-            )
+
             if batch_num < start_batch and epoch_num <= start_epoch:
                 logger.info("Skipping completed batches..")
 
@@ -125,23 +130,38 @@ def _train_model(
                 preds = model(batch)
             ancor_preds, positive_preds, negative_preds = preds[0], preds[1], preds[2]
             loss = triplet_loss_module(ancor_preds, positive_preds, negative_preds)
+            loss_float = round(loss.item(), 4)
             if not eval_round:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+
             else:
-                eval_loss = loss.item()
-                msg = (
-                    "Epoch: "
-                    + str(epoch_num)
-                    + " Batch: "
-                    + str(batch_num)
-                    + "/"
-                    + str(total_batches)
-                    + " Loss: "
-                    + str(eval_loss)
-                )
-                logger.info(msg)
+                if log_to_wandb:
+                    wandb.log(
+                        {
+                            "eval_loss": loss_float,
+                            "epoch": epoch_num,
+                            "batch_num": batch_num,
+                            "steps_taken": steps_taken,
+                        },
+                        step=steps_taken,
+                    )
+
+            msg = (
+                "Epoch: "
+                + str(epoch_num)
+                + " Batch: "
+                + str(batch_num)
+                + "/"
+                + str(total_batches)
+                + " Loss: "
+                + str(loss_float)
+            )
+            if eval_round:
+                msg += " (eval round)"
+
+            logger.info(msg)
             batch_num += 1
             steps_taken += 1
     return model
@@ -190,6 +210,10 @@ def train(
     evaluation=True,
     save_every=100_000,
     lr=0.001,
+    log_to_wandb=False,
+    wandb_project="famus",
+    wand_api_key_path=None,
+    n_processes=1,
 ) -> None:
     if os.path.exists(output_path):
         logger.info("Output path already exists. Exiting.")
@@ -216,6 +240,9 @@ def train(
         if not torch.cuda.is_available():
             raise ValueError("cuda is not available in this environment")
         device = torch.device("cuda")
+    elif device == "cpu":
+        device = torch.device("cpu")
+        torch.set_num_threads(n_processes)
 
     with open(sdfloader_path, "rb") as f:
         sdfloader: SDFloader = pickle.load(f)
@@ -249,6 +276,48 @@ def train(
 
     logger.info("Starting to train on device: " + str(device))
     loss = TripletMarginLoss(margin=1, p=2)
+    if log_to_wandb:
+        if wand_api_key_path:
+            with open(wand_api_key_path, "r") as f:
+                wandb.login(key=f.read().strip())
+        else:
+            wandb.login()
+        time = now()
+        model_dir = os.path.basename(os.path.dirname(output_path))
+        run_name = f"{model_dir}_{time}"
+        wandb.init(
+            project=wandb_project,
+            name=run_name,
+            config={
+                "num_epochs": num_epochs,
+                "batch_size": batch_size,
+                "learning_rate": lr,
+                "device": str(device),
+            },
+        )
+        wandb.watch(snn_model, log="all")
+    else:
+        logger.info("wandb logging is disabled. Set log_to_wandb=True to enable it.")
+    if save_checkpoints:
+        if not checkpoint_dir_path:
+            raise ValueError(
+                "checkpoint_dir_path is required when save_checkpoints is True"
+            )
+        if not os.path.exists(checkpoint_dir_path):
+            os.makedirs(checkpoint_dir_path, exist_ok=True)
+        logger.info(f"Checkpoints will be saved to {checkpoint_dir_path}")
+    else:
+        logger.info(
+            "Checkpoints will not be saved. Set save_checkpoints=True to enable it."
+        )
+    if latest_epoch > 0 or latest_batch > 0:
+        logger.info(
+            f"Resuming training from epoch {latest_epoch} and batch {latest_batch}. "
+            "If this is not intended, please delete the checkpoint directory."
+        )
+    else:
+        logger.info("Starting training from scratch.")
+
     logger.info("Training model")
     model = _train_model(
         model=snn_model,
@@ -264,6 +333,7 @@ def train(
         start_batch=latest_batch,
         save_every=save_every,
         lr=lr,
+        log_to_wandb=log_to_wandb,
     )
     model.save_state(output_path)
     logger.info("Training complete")

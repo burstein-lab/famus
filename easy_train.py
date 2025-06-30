@@ -74,6 +74,9 @@ def main():
     logger.info("Starting easy_train.py...")
     args = parser.parse_args()
     cfg = get_cfg()
+    log_to_wandb = cfg.get("log_to_wandb", False)
+    wandb_project = cfg.get("wandb_project", "famus")
+    wand_api_key_path = cfg.get("wandb_api_key_path")
     input_fasta_dir_path = args.input_fasta_dir_path
     n_processes = args.n_processes or cfg["n_processes"]
     num_epochs = args.num_epochs or cfg["num_epochs"]
@@ -198,6 +201,10 @@ def main():
         evaluation=True,
         save_every=save_every,
         lr=0.001,
+        log_to_wandb=log_to_wandb,
+        wandb_project=wandb_project,
+        wand_api_key_path=wand_api_key_path,
+        n_processes=n_processes,
     )
 
     if not os.path.exists(os.path.join(model_path, "env")):
