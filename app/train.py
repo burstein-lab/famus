@@ -43,7 +43,6 @@ def _train_model(
     lr=0.001,
     start_epoch=0,
     start_batch=0,
-    log_to_wandb=False,
 ) -> MLP:
     """
     Train a model using a triplet loss function.
@@ -210,9 +209,6 @@ def train(
     evaluation=True,
     save_every=100_000,
     lr=0.001,
-    log_to_wandb=False,
-    wandb_project="famus",
-    wand_api_key_path=None,
     n_processes=1,
 ) -> None:
     if os.path.exists(output_path):
@@ -333,7 +329,6 @@ def train(
         start_batch=latest_batch,
         save_every=save_every,
         lr=lr,
-        log_to_wandb=log_to_wandb,
     )
     model.save_state(output_path)
     logger.info("Training complete")
