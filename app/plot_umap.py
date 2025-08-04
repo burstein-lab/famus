@@ -12,6 +12,7 @@ import umap
 import random
 import matplotlib
 from app.model import load_from_state
+from sklearn.neighbors import NearestNeighbors
 
 matplotlib.use("Agg")
 
@@ -42,9 +43,43 @@ def load_data(sdf_train_path):
     return sdf_train
 
 
+def perc_nn_is_correct(embeddings, labels):
+    # Calculate how many of the samples' nearest neighbor is the same as the sample itself
+    nbrs = NearestNeighbors(n_neighbors=2, algorithm="auto").fit(embeddings)
+    distances, indices = nbrs.kneighbors(embeddings)
+
+    correct_count = 0
+    for i in range(len(embeddings)):
+        # The first neighbor is the point itself, so we check the second one
+        if labels[indices[i][1]] == labels[i]:
+            correct_count += 1
+
+    return correct_count / len(embeddings)
+
+
+def knn_purity(embeddings, labels):
+    # Use n_neighbors=501 to account for the point itself being the first neighbor
+    nbrs = NearestNeighbors(n_neighbors=501, algorithm="auto").fit(embeddings)
+    distances, indices = nbrs.kneighbors(embeddings)
+
+    purity_scores = []
+    for k in range(1, 501):
+        total_purity = 0
+        for i in range(len(embeddings)):
+            # Skip the first neighbor (which is the point itself) and take k neighbors
+            neighbor_labels = labels[indices[i][1 : k + 1]]
+            # Calculate the purity as the fraction of neighbors with the same label
+            purity = np.sum(neighbor_labels == labels[i]) / k
+            total_purity += purity
+
+        # Average purity across all points - THIS WAS MISSING!
+        avg_purity = total_purity / len(embeddings)
+        purity_scores.append(avg_purity)
+
+    return purity_scores
+
+
 """
-K01866               YARS, tyrS; tyrosyl-tRNA synthetase [EC:6.1.1.1]
-K01867               WARS, trpS; tryptophanyl-tRNA synthetase [EC:6.1.1.2]
 K01868               TARS, thrS; threonyl-tRNA synthetase [EC:6.1.1.3]
 K01869               LARS, leuS; leucyl-tRNA synthetase [EC:6.1.1.4]
 K01870               IARS, ileS; isoleucyl-tRNA synthetase [EC:6.1.1.5]
@@ -119,11 +154,12 @@ colors = colors[: len(kos)]
 print("Started")
 
 sdf_train_path = "models/full/kegg_2021_dedup/data_dir/sdf_train.pkl"
-sdf_test_path = "data/all_synthetases_full/kegg_2021_dedup/sdf_classify.pkl"
-model_state_path = (
-    "models/full/kegg_2021_dedup/checkpoints/epoch_5/1470384_checkpoint.pt"
+sdf_test_path = (
+    "data/relevant_synthetases_reborn_model/kegg_2021_reborn/sdf_classify.pkl"
 )
+model_state_path = "reborn.pt"
 gt = "/davidb/guyshur/kegg_data/2023/ground_truth.pkl"
+relevant_synthetases_path = "/davidb/guyshur/kegg_data/synthetase_relevant_ids.list"
 logger.info("Loading model")
 print("Loading model")
 model = load_from_state(model_state_path, device=torch.device("cpu"))
@@ -131,6 +167,8 @@ model.eval()
 print("Loading data")
 
 sdf_test: SparseDataFrame = pickle.load(open(sdf_test_path, "rb"))
+relevant_synthetase_ids = open(relevant_synthetases_path, "r").read().splitlines()
+sdf_test = sdf_test.select_by_index_ids(relevant_synthetase_ids)
 
 sdf_test_index_ids = list(sdf_test.index_ids)
 
@@ -150,7 +188,7 @@ import pickle
 
 # if not os.path.exists("umap_light_raw.pkl"):
 print("Calculating umap")
-manifold = umap.UMAP(n_components=2, n_neighbors=20, min_dist=0.01)
+manifold = umap.UMAP(n_components=2, n_neighbors=10, min_dist=0.01)
 
 test_manifold_data = manifold.fit_transform(test_raw_data)
 #     with open("umap_light_raw.pkl", "wb") as f:
@@ -158,79 +196,94 @@ test_manifold_data = manifold.fit_transform(test_raw_data)
 # else:
 #     with open("umap_light_raw.pkl", "rb") as f:
 #         test_manifold_data = pickle.load(f)
-print("Plotting")
-fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(3, 9))
+print("Calculating purity")
+# purity_raw = knn_purity(test_raw_data, sdf_test.labels)
+nn_correct_raw = perc_nn_is_correct(test_raw_data, sdf_test.labels)
+print(f"Percentage of nearest neighbors that are correct: {nn_correct_raw:.2%}")
+# fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(3, 9))
 
-sns.scatterplot(
-    x=test_manifold_data[:, 0],
-    y=test_manifold_data[:, 1],
-    hue=sdf_test.labels,
-    palette=colors,
-    ax=axes[0],
-    s=10,
-    alpha=0.5,
-    legend=False,
-    hue_order=labels,
-)
+# sns.scatterplot(
+#     x=test_manifold_data[:, 0],
+#     y=test_manifold_data[:, 1],
+#     hue=sdf_test.labels,
+#     palette=colors,
+#     ax=axes[0],
+#     s=15,
+#     alpha=0.5,
+#     legend=False,
+#     hue_order=labels,
+# )
 
-axes[0].set_xlabel("UMAP 1", fontsize=10)
-axes[0].set_ylabel("UMAP 2", fontsize=10)
-axes[0].grid(False)
-for spine in axes[0].spines.values():
-    spine.set_visible(True)
-    spine.set_linewidth(1)
-    spine.set_color("black")
-axes[0].annotate(
-    "A",
-    xy=(-0.25, 0.92),
-    xycoords="axes fraction",
-    fontsize=16,
-    horizontalalignment="left",
-    verticalalignment="bottom",
-)
+# axes[0].set_xlabel("UMAP 1", fontsize=10)
+# axes[0].set_ylabel("UMAP 2", fontsize=10)
+# axes[0].grid(False)
+# for spine in axes[0].spines.values():
+#     spine.set_visible(True)
+#     spine.set_linewidth(1)
+#     spine.set_color("black")
+# axes[0].annotate(
+#     "A",
+#     xy=(-0.25, 0.92),
+#     xycoords="axes fraction",
+#     fontsize=16,
+#     horizontalalignment="left",
+#     verticalalignment="bottom",
+# )
 
 print("Normalizing data")
 test_norm_data = l2_normalize(test_raw_data)
-# if not os.path.exists("umap_light_norm.pkl"):
-print("Calculating umap")
-test_manifold_norm = manifold.fit_transform(test_norm_data)
-#    with open("umap_light_norm.pkl", "wb") as f:
-#        pickle.dump(test_manifold_norm, f)
-# else:
-#    with open("umap_light_norm.pkl", "rb") as f:
-#        test_manifold_norm = pickle.load(f)
-print("Plotting")
-
-sns.scatterplot(
-    x=test_manifold_norm[:, 0],
-    y=test_manifold_norm[:, 1],
-    hue=sdf_test.labels,
-    palette=colors,
-    ax=axes[1],
-    s=10,
-    alpha=0.5,
-    legend=False,
-    hue_order=labels,
+nn_correct_norm = perc_nn_is_correct(test_norm_data, sdf_test.labels)
+print(
+    f"Percentage of nearest neighbors that are correct (normalized): {nn_correct_norm:.2%}"
 )
-axes[1].set_xlabel("UMAP 1", fontsize=10)
-axes[1].set_ylabel("UMAP 2", fontsize=10)
-axes[1].grid(False)
-for spine in axes[1].spines.values():
-    spine.set_visible(True)
-    spine.set_linewidth(1)
-    spine.set_color("black")
+# # if not os.path.exists("umap_light_norm.pkl"):
+# print("Calculating umap")
+# test_manifold_norm = manifold.fit_transform(test_norm_data)
+# #    with open("umap_light_norm.pkl", "wb") as f:
+# #        pickle.dump(test_manifold_norm, f)
+# # else:
+# #    with open("umap_light_norm.pkl", "rb") as f:
+# #        test_manifold_norm = pickle.load(f)
+# print("Calculating purity")
+# purity_norm = knn_purity(test_norm_data, sdf_test.labels)
 
-axes[1].annotate(
-    "B",
-    xy=(-0.25, 0.92),
-    xycoords="axes fraction",
-    fontsize=16,
-    horizontalalignment="left",
-    verticalalignment="bottom",
-)
-# if not os.path.exists("umap_light_mf.pkl"):
+# sns.scatterplot(
+#     x=test_manifold_norm[:, 0],
+#     y=test_manifold_norm[:, 1],
+#     hue=sdf_test.labels,
+#     palette=colors,
+#     ax=axes[1],
+#     s=15,
+#     alpha=0.5,
+#     legend=False,
+#     hue_order=labels,
+# )
+# axes[1].set_xlabel("UMAP 1", fontsize=10)
+# axes[1].set_ylabel("UMAP 2", fontsize=10)
+# axes[1].grid(False)
+# for spine in axes[1].spines.values():
+#     spine.set_visible(True)
+#     spine.set_linewidth(1)
+#     spine.set_color("black")
+
+# axes[1].annotate(
+#     "B",
+#     xy=(-0.25, 0.92),
+#     xycoords="axes fraction",
+#     fontsize=16,
+#     horizontalalignment="left",
+#     verticalalignment="bottom",
+# )
+
+# # if not os.path.exists("umap_light_mf.pkl"):
 logger.info("Calculating embeddings")
 test_embeddings = _calc_embeddings(sdf=sdf_test, model=model, device="cpu")
+perc_nn_correct_embeddings = perc_nn_is_correct(test_embeddings, sdf_test.labels)
+print(
+    f"Percentage of nearest neighbors that are correct (embeddings): {perc_nn_correct_embeddings:.2%}"
+)
+exit()
+# #     with open("umap_light_embeddings.pkl", "wb") as f:
 #     test_embeddings = test_embeddings
 print("Calculating embeddings manifold")
 test_manifold_embeddings = manifold.fit_transform(test_embeddings)
@@ -239,7 +292,8 @@ test_manifold_embeddings = manifold.fit_transform(test_embeddings)
 # else:
 #     with open("umap_light_mf.pkl", "rb") as f:
 #         test_manifold_embeddings = pickle.load(f)
-
+print("Calculating purity")
+purity_embeddings = knn_purity(test_embeddings, sdf_test.labels)
 print("Plotting")
 
 sns.scatterplot(
@@ -248,7 +302,7 @@ sns.scatterplot(
     hue=sdf_test.labels,
     palette=colors,
     ax=axes[2],
-    s=10,
+    s=15,
     alpha=0.5,
     legend=False,
     hue_order=labels,
@@ -296,4 +350,30 @@ axes[1].legend(
 for ax in axes:
     ax.tick_params(axis="both", which="major", labelsize=6)
     ax.tick_params(axis="both", which="minor", labelsize=6)
-plt.savefig("umap_20.png", dpi=300, bbox_inches="tight")
+logger.info("Saving figure")
+plt.savefig(
+    "umap_40_reborn_only_relevant.png",
+    bbox_inches="tight",
+    dpi=400,
+)
+
+plt.close()
+for category, purities in [
+    ("Raw similarity scores", purity_raw),
+    ("L2-Normalized", purity_norm),
+    ("Embeddings", purity_embeddings),
+]:
+    sns.lineplot(
+        x=np.arange(1, 501),
+        y=purities,
+        label=category,
+    )
+plt.xlabel("k (number of nearest neighbors)")
+plt.ylabel("Purity")
+plt.title("Purity vs. k for different data representations")
+plt.legend()
+plt.grid(True)
+plt.savefig("purity_vs_k.png", bbox_inches="tight", dpi=400)
+plt.close()
+
+print("Done")
