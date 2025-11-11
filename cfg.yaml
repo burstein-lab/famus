@@ -30,6 +30,6 @@ mmseqs_cluster_identity: 0.9 # 0 <= float <= 1.0
 mmseqs_cluster_coverage_subclusters: 0.5 # 0 <= float <= 1.0
 max_fasta_n_sequences_times_longest_sequence: 500_000_000 # positive integer
 save_every: 100000 # positive integer
-log_to_wandb: True # True or False
+log_to_wandb: False # True or False
 wandb_project: 'famus'
 wandb_api_key_path: "wandb_api_key.txt"
