@@ -1,0 +1,28 @@
+#!/bin/bash
+
+fasta=$1
+threads=${2:-6}
+params=${3}
+
+if [ "$#" -lt 1 ]
+then
+  echo "USAGE: $0 <fasta file> [<threads> <other mafft param>]
+   Runs mafft --auto --anysymbol and if fails (huge huge alignments) runs lowest resources verison: mafft --retree 1 --maxiterate 0 --nofft --parttree  --anysymbol 
+
+   Default values:
+   threads = $threads
+
+   EXAMPLES:
+   $0 seq.fa 6 --quiet > seq.aln
+"
+  exit 1
+fi
+tmp=tmp/qMafft.$$.faa.tmp
+cat $fasta > $tmp
+if [ `grep -c ">" $tmp` == 1 ]
+then
+	cat $tmp
+else
+	mafft --quiet --auto --anysymbol --thread $threads $params $tmp || mafft -anysymbol --retree 1 --maxiterate 0 --nofft --parttree --thread $threads $params $tmp
+fi
+rm -f $tmp
