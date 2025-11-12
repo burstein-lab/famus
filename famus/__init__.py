@@ -1,3 +1,4 @@
+from famus.__version__ import __version__
 import logging
 import sys
 from datetime import datetime

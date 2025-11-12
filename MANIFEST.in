@@ -1,0 +1,44 @@
+include README.md
+include LICENSE
+include cfg.yaml
+include setup.py
+include pyproject.toml
+
+# Package code only
+include famus/classification.py
+include famus/__init__.py
+include famus/__version__.py
+include famus/data_preprocessing.py
+include famus/model.py
+include famus/utils.py
+include famus/sdf.py
+include famus/sdfloader.py
+include famus/train.py
+include famus/cli/*
+include famus/qmafft
+
+# Conda recipe
+recursive-include conda_recipe/ *
+
+include models/*/*/env
+include tmp/logs/.gitkeep
+include examples/*
+
+# Exclude everything else
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude *.so
+global-exclude *.dylib
+global-exclude .git*
+global-exclude *.bash
+
+# Explicitly exclude heavy directories
+prune models
+prune tmp
+prune build
+prune dist
+prune examples
+prune tests/output
+prune eval
+prune data

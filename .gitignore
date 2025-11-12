@@ -1,11 +1,40 @@
+gitignore# Python
 **/*pycache*
-**/*pyc
+**/*__pycache__*
+**/*.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Temporary files
 tmp/*
 !tmp/logs/
 tmp/logs/*
 !tmp/logs/.gitkeep
+
+# Models (if not tracking)
 models/*
 !models/*/
 models/*/*
 !models/*/*/
 !models/*/*/env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Conda
+*.tar.bz2
+conda_build/
+
+# Data
+*.fasta
+*.hmm
+*.aln
