@@ -3,8 +3,8 @@ import os
 
 import yaml
 
-from app import data_preprocessing as dp
-from app import get_cfg, logger
+from famus import data_preprocessing as dp
+from famus import get_cfg, logger
 
 
 def main(

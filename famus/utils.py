@@ -5,7 +5,7 @@ import subprocess
 import torch
 from tqdm import tqdm
 
-from app import logger
+from famus import logger
 
 GIGABYTE = 1024**3
 

@@ -3,9 +3,9 @@ import os
 
 import yaml
 
-from app import get_cfg, logger
-from app.classification import calculate_threshold
-from app.train import train
+from famus import get_cfg, logger
+from famus.classification import calculate_threshold
+from famus.train import train
 from models import models_root_path
 from preprocess_train import main as preprocess
 

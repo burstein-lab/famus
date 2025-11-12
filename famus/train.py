@@ -8,9 +8,9 @@ import torch
 from torch import optim
 from torch.nn import TripletMarginLoss
 
-from app import logger, get_cfg, now
-from app.model import MLP, VariableNet, load_from_state
-from app.sdfloader import SDFloader
+from famus import logger, get_cfg, now
+from famus.model import MLP, VariableNet, load_from_state
+from famus.sdfloader import SDFloader
 
 cfg = get_cfg()
 log_to_wandb = cfg.get("log_to_wandb")

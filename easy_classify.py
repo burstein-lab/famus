@@ -1,11 +1,11 @@
 import argparse
 import os
 
-from app import get_cfg
+from famus import get_cfg
 from models import models_root_path
-from app.classification import classify
+from famus.classification import classify
 from preprocess_classify import main as preprocess
-from app import logger
+from famus import logger
 import shutil
 
 if __name__ == "__main__":

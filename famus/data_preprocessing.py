@@ -14,9 +14,9 @@ import numpy as np
 from Bio import SeqIO
 from tqdm import tqdm
 
-from app import get_cfg, logger, now
-from app.sdf import from_sparse_dict, load
-from app.utils import concatenate_files, even_split
+from famus import get_cfg, logger, now
+from famus.sdf import from_sparse_dict, load
+from famus.utils import concatenate_files, even_split
 
 SUBCLUSTER_SUFFIX_PATTERN = r"\.sub_cluster\.cluster\.\d+\.fasta$"
 SPLIT_SUBCLUSTER_SUFFIX_PATTERN = r"\.sub_cluster\.cluster\.\d+\.\d+\.fasta$"

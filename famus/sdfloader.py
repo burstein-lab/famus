@@ -6,8 +6,8 @@ from typing import Generator
 import numpy as np
 import torch
 
-from app import logger
-from app.sdf import SparseDataFrame, load
+from famus import logger
+from famus.sdf import SparseDataFrame, load
 
 
 class SDFloader:

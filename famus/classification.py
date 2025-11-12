@@ -7,12 +7,12 @@ import torch
 from sklearn.metrics import f1_score, pairwise_distances
 from torch import cdist
 
-from app import get_cfg, logger
-from app import now as now_func
-from app.model import MLP
-from app.sdf import SparseDataFrame, load
-from app.utils import even_split
-from app.model import load_from_state
+from famus import get_cfg, logger
+from famus import now as now_func
+from famus.model import MLP
+from famus.sdf import SparseDataFrame, load
+from famus.utils import even_split
+from famus.model import load_from_state
 
 cfg = get_cfg()
 user_device = cfg["user_device"]
