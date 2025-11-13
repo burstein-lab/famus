@@ -1,4 +1,4 @@
-gitignore# Python
+# Python
 **/*pycache*
 **/*__pycache__*
 **/*.pyc
@@ -12,6 +12,7 @@ tmp/*
 !tmp/logs/
 tmp/logs/*
 !tmp/logs/.gitkeep
+build_output/
 
 # Models (if not tracking)
 models/*
