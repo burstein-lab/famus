@@ -9,6 +9,7 @@ import sys
 import traceback
 import uuid
 from collections import namedtuple
+from importlib.resources import files
 
 import numpy as np
 from Bio import SeqIO
@@ -33,6 +34,7 @@ number_of_sampled_sequences_per_subcluster = cfg[
 ]
 fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
 samples_profiles_product_limit = cfg["samples_profiles_product_limit"]
+qmafft_path = files("famus") / "qmafft"
 
 
 def validate_dir_paths(paths: list) -> tuple:
@@ -547,8 +549,8 @@ def qmafft(input_path: str, output_path: str, n_processes=1) -> None:
     Uses mafft to align sequences and saves the alignment to a file.
     """
     output = subprocess.check_output(
-        "app/qmafft {} {} --auto --anysymbol --quiet".format(
-            input_path, n_processes
+        "{} {} {} --auto --anysymbol --quiet".format(
+            qmafft_path, input_path, n_processes
         ).split(" ")
     ).decode(sys.stdout.encoding)
     if output or not os.path.exists(output_path):
@@ -717,14 +719,13 @@ def randomly_split_subclusters(
         if ortholog not in split_subcluster_md:
             split_subcluster_md[ortholog] = {}
         file_path = os.path.join(input_subclusters_fasta_dir_path, file)
-        parser = FastaParser(file_path)
-        number_of_sequences = len(parser)
+        records = list(SeqIO.parse(file_path, "fasta"))
+        number_of_sequences = len(records)
         assert number_of_sequences >= 6, (
             "subcluster {} has less than 6 sequences".format(file)
         )
-        seq_ids = parser.get_ids()
-        random.shuffle(seq_ids)
-        groups = even_split(seq_ids, 3)
+        random.shuffle(records)
+        groups = even_split(records, 3)
 
         for i in range(3):
             profile_split_file = subcluster + "." + str(i) + ".fasta"
@@ -734,7 +735,7 @@ def randomly_split_subclusters(
             with open(
                 record_split_file, "w"
             ) as f:  # exporting the sequences that will be scored against the profile
-                parser.export_sequences(groups[i], f)
+                SeqIO.write(groups[i], f, "fasta")
             profile_records = []  # the records of the sequences that will make the profile
             for j in range(3):
                 if (
@@ -749,7 +750,7 @@ def randomly_split_subclusters(
                     "subcluster": subcluster,
                 }
             with open(profile_split_file, "w") as f:
-                parser.export_sequences(profile_records, f)
+                SeqIO.write(profile_records, f, "fasta")
 
     with open(output_path_md, "wb+") as f:
         pickle.dump(split_subcluster_md, f)

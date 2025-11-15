@@ -3,9 +3,8 @@ import pickle
 from typing import Any, Tuple
 
 import numpy as np
-import torch
 from sklearn.metrics import f1_score, pairwise_distances
-from torch import cdist
+
 
 from famus import get_cfg, logger
 from famus import now as now_func
@@ -13,6 +12,14 @@ from famus.model import MLP
 from famus.sdf import SparseDataFrame, load
 from famus.utils import even_split
 from famus.model import load_from_state
+
+try:
+    import torch
+    from torch import cdist
+except ImportError:
+    logger.warning(
+        "PyTorch is not installed. Please install PyTorch to use the classification module."
+    )
 
 cfg = get_cfg()
 user_device = cfg["user_device"]
@@ -101,8 +108,8 @@ def load_sparse_dataframes(
 
 
 def _min_dist_ind(
-    embeddings_a: torch.Tensor,
-    embeddings_b: torch.Tensor,
+    embeddings_a,
+    embeddings_b,
     device,
     n_processes=n_processes,
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -113,8 +120,7 @@ def _min_dist_ind(
         a_b_distances = torch.tensor(a_b_distances, dtype=torch.float32)
     else:
         a_b_distances = cdist(embeddings_a, embeddings_b)
-        min_distances: torch.Tensor
-        min_indices: torch.Tensor
+
     min_distances, min_indices = torch.min(a_b_distances, dim=1)
     output = min_distances.cpu().numpy(), min_indices.cpu().numpy()
     return output
@@ -153,7 +159,7 @@ def get_embeddings(
     chunksize=chunksize,
     use_saved_embeddings=True,
     n_processes=n_processes,
-) -> torch.Tensor:
+):
     if embeddings_path is None or embeddings_path == "":
         use_saved_embeddings = False
     if use_saved_embeddings and os.path.exists(embeddings_path):
@@ -165,7 +171,7 @@ def get_embeddings(
         if use_saved_embeddings:
             logger.info("Saving embeddings")
             np.save(embeddings_path, embeddings)
-    embeddings: torch.Tensor = torch.tensor(embeddings, dtype=torch.float32)
+    embeddings = torch.tensor(embeddings, dtype=torch.float32)
     embeddings = embeddings.to(device)
     return embeddings
 

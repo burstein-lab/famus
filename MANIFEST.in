@@ -1,6 +1,5 @@
 include README.md
 include LICENSE
-include cfg.yaml
 include setup.py
 include pyproject.toml
 
@@ -16,12 +15,13 @@ include famus/sdfloader.py
 include famus/train.py
 include famus/cli/*
 include famus/qmafft
+include famus/cfg.yaml
 
 # Conda recipe
 recursive-include conda_recipe/ *
 
-include models/*/*/env
-include tmp/logs/.gitkeep
+
+
 include examples/*
 
 # Exclude everything else
@@ -34,11 +34,14 @@ global-exclude .git*
 global-exclude *.bash
 
 # Explicitly exclude heavy directories
-prune models
-prune tmp
+prune famus/models
+prune famus/tmp
 prune build
 prune dist
 prune examples
 prune tests/output
 prune eval
 prune data
+
+include famus/models/*/*/env
+include famus/tmp/logs/.gitkeep

@@ -2,10 +2,8 @@ import shutil
 from datetime import datetime
 import subprocess
 
-import torch
 from tqdm import tqdm
 
-from famus import logger
 
 GIGABYTE = 1024**3
 
@@ -44,14 +42,6 @@ def sample_sequences(input_file: str, output_file: str, sample_size: int) -> Non
     )
 
 
-def _log_gpu_memory() -> None:
-    """
-    Log the current GPU memory usage.
-    :return: None
-    """
-    current_bytes_in_gpu = torch.cuda.memory_allocated()
-    current_gb_in_gpu = current_bytes_in_gpu // GIGABYTE
-    logger.info("Current GPU memory: " + str(current_gb_in_gpu) + "GB")
 
 
 def now() -> str:

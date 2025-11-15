@@ -4,12 +4,19 @@ import os
 import re
 from typing import Tuple
 
-import torch
-from torch import optim
-from torch.nn import TripletMarginLoss
+try:
+    import torch
+    from torch import optim
+    from torch.nn import TripletMarginLoss
+except ImportError:
+    from famus import logger
+
+    logger.warning(
+        "PyTorch is not installed. Please install PyTorch to use the train module."
+    )
 
 from famus import logger, get_cfg, now
-from famus.model import MLP, VariableNet, load_from_state
+from famus.model import MLP, load_from_state
 from famus.sdfloader import SDFloader
 
 cfg = get_cfg()
@@ -32,7 +39,7 @@ def save_state(model: MLP, path: str, batch_num: int, epoch_num: int) -> None:
 def _train_model(
     model: MLP,
     sdfloader: SDFloader,
-    triplet_loss_module: TripletMarginLoss,
+    triplet_loss_module,
     device: Any,
     checkpoint_dir_path: str,
     num_epochs=10,

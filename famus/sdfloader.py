@@ -4,10 +4,18 @@ import random
 from typing import Generator
 
 import numpy as np
-import torch
+
 
 from famus import logger
 from famus.sdf import SparseDataFrame, load
+
+
+try:
+    import torch
+except ImportError:
+    logger.warning(
+        "PyTorch is not installed. Please install PyTorch to use the sdfloader module."
+    )
 
 
 class SDFloader:
@@ -98,9 +106,7 @@ class SDFloader:
         del triplets
         logger.info("Created " + str(len(self.idx_load_stacks)) + " load stacks")
 
-    def triplet_batch_generator(
-        self, batch_size=32
-    ) -> Generator[torch.Tensor, None, None]:
+    def triplet_batch_generator(self, batch_size=32):
         assert batch_size <= self.load_stack_min_len, (
             "batch_size is too small, increase it to at least "
             + str(self.load_stack_min_len)
