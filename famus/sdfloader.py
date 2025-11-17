@@ -6,7 +6,7 @@ from typing import Generator
 import numpy as np
 
 
-from famus import logger
+from famus.logging import logger
 from famus.sdf import SparseDataFrame, load
 
 

@@ -1,5 +1,5 @@
 import os
-from famus import logger
+from famus.logging import logger
 
 try:
     import torch

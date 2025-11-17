@@ -4,28 +4,22 @@ import os
 import re
 from typing import Tuple
 
+from famus.utils import now
+
 try:
     import torch
     from torch import optim
     from torch.nn import TripletMarginLoss
 except ImportError:
-    from famus import logger
+    from famus.logging import logger
 
     logger.warning(
         "PyTorch is not installed. Please install PyTorch to use the train module."
     )
 
-from famus import logger, get_cfg, now
+from famus.logging import logger
 from famus.model import MLP, load_from_state
 from famus.sdfloader import SDFloader
-
-cfg = get_cfg()
-log_to_wandb = cfg.get("log_to_wandb")
-wandb_project = cfg.get("wandb_project", "famus")
-wand_api_key_path = cfg.get("wandb_api_key_path", None)
-
-if log_to_wandb:
-    import wandb
 
 
 def save_state(model: MLP, path: str, batch_num: int, epoch_num: int) -> None:
@@ -50,6 +44,7 @@ def _train_model(
     lr=0.001,
     start_epoch=0,
     start_batch=0,
+    log_to_wandb=False,
 ) -> MLP:
     """
     Train a model using a triplet loss function.
@@ -88,6 +83,9 @@ def _train_model(
     total_batches = sdfloader.get_num_batches(batch_size)
     eval_round = False
     steps_taken = 1
+    if log_to_wandb:
+        import wandb
+
     for epoch_num in range(start_epoch, num_epochs):
         batch_num = 0
         batch: tuple
@@ -217,6 +215,9 @@ def train(
     save_every=100_000,
     lr=0.001,
     n_processes=1,
+    log_to_wandb=False,
+    wandb_project="famus",
+    wandb_api_key_path=None,
 ) -> None:
     if os.path.exists(output_path):
         logger.info("Output path already exists. Exiting.")
@@ -246,6 +247,8 @@ def train(
     elif device == "cpu":
         device = torch.device("cpu")
         torch.set_num_threads(n_processes)
+    if log_to_wandb:
+        import wandb
 
     with open(sdfloader_path, "rb") as f:
         sdfloader: SDFloader = pickle.load(f)
@@ -280,8 +283,8 @@ def train(
     logger.info("Starting to train on device: " + str(device))
     loss = TripletMarginLoss(margin=1, p=2)
     if log_to_wandb:
-        if wand_api_key_path:
-            with open(wand_api_key_path, "r") as f:
+        if wandb_api_key_path:
+            with open(wandb_api_key_path, "r") as f:
                 wandb.login(key=f.read().strip())
         else:
             wandb.login()
@@ -300,7 +303,7 @@ def train(
         )
         wandb.watch(snn_model, log="all")
     else:
-        logger.info("wandb logging is disabled. Set log_to_wandb=True to enable it.")
+        logger.info("wandb logging is disabled.")
     if save_checkpoints:
         if not checkpoint_dir_path:
             raise ValueError(
