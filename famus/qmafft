@@ -17,12 +17,10 @@ then
 "
   exit 1
 fi
-tmp=tmp/qMafft.$$.faa.tmp
-cat $fasta > $tmp
-if [ `grep -c ">" $tmp` == 1 ]
+if [ `grep -c ">" $fasta` == 1 ]
 then
-	cat $tmp
+    cat $fasta
 else
-	mafft --quiet --auto --anysymbol --thread $threads $params $tmp || mafft -anysymbol --retree 1 --maxiterate 0 --nofft --parttree --thread $threads $params $tmp
+    mafft --quiet --auto --anysymbol --thread $threads $params $fasta || \
+    mafft --anysymbol --retree 1 --maxiterate 0 --nofft --parttree --thread $threads $params $fasta
 fi
-rm -f $tmp

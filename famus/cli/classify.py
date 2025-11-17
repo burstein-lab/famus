@@ -1,44 +1,32 @@
 import argparse
 import os
 
-from famus import get_cfg
-from famus import MODELS_ROOT
 from famus.classification import classify
 from famus.cli.preprocess_classify import main as preprocess
-from famus import logger
 import shutil
+
+
+import yaml
+
+from famus.logging import setup_logger
+from .common import get_common_parser
+from famus.config import get_default_config
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Classify protein sequences using installed models."
+        parents=[get_common_parser()],
+        description="Classify protein sequences using installed models.",
     )
     parser.add_argument(
-        "--input_fasta_file_path",
+        "input_fasta_file_path",
         type=str,
-        required=True,
-        help="[REQUIRED] input fasta file path",
+        help="Path to input fasta file",
     )
     parser.add_argument(
-        "--output_dir",
+        "output_dir",
         type=str,
-        required=True,
-        help="[REQUIRED] output directory",
-    )
-    parser.add_argument(
-        "--n_processes",
-        type=int,
-        help="Number of processes to use for hmmsearch and cpu-based classification",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        help="Device to use for classification (cpu or cuda)",
-    )
-    parser.add_argument(
-        "--chunksize",
-        type=int,
-        help="Number of sequences to classify at once",
+        help="Output directory",
     )
     parser.add_argument(
         "--models",
@@ -47,35 +35,44 @@ def main():
         help="Models to use for classification separated by spaces",
     )
     parser.add_argument(
-        "--model_type",
+        "--model-type",
         type=str,
-        help="Type of model(s) to use (full or light)",
+        help="Type of model(s) to use (comprehensive or light)",
     )
-    parser.add_argument("--load_sdf_from_pickle", action=argparse.BooleanOptionalAction)
-    logger.info("Starting easy_classify.py...")
+    parser.add_argument("--load-sdf-from-pickle", action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
+    cfg_file_path = args.config
+    if cfg_file_path:
+        with open(cfg_file_path, "r") as f:
+            cfg = yaml.safe_load(f)
+    else:
+        cfg = get_default_config()
+    no_log = args.no_log
+    log_dir = args.log_dir or cfg["log_dir"]
+    logger = setup_logger(enable_logging=not no_log, log_dir=log_dir)
+    logger.info("Starting classification...")
+
     input_fasta_file_path = args.input_fasta_file_path
     output_dir = args.output_dir
-    cfg = get_cfg()
-    device = cfg["user_device"] if args.device is None else args.device
-    chunksize = cfg["chunksize"] if args.chunksize is None else args.chunksize
-    models = cfg["models"] if args.models is None else args.models
-    models_type = cfg["models_type"] if args.model_type is None else args.model_type
-    n_processes = (
-        args.n_processes if args.n_processes is not None else cfg["n_processes"]
-    )
-    model_paths = [os.path.join(MODELS_ROOT, models_type, model) for model in models]
+    device = args.device or cfg["device"]
+    chunksize = args.chunksize or cfg["chunksize"]
+    models = args.models or cfg["models"]
+    models_type = args.model_type or cfg["model_type"]
+    n_processes = args.n_processes or cfg["n_processes"]
+    models_dir = args.models_dir or cfg["models_dir"]
+    model_paths = [os.path.join(models_dir, models_type, model) for model in models]
     if missing_models := [model for model in model_paths if not os.path.exists(model)]:
         raise FileNotFoundError(f"Missing models: {missing_models}")
 
     if args.load_sdf_from_pickle:
         for model in models:
-            model_path = os.path.join(MODELS_ROOT, models_type, model)
+            model_path = os.path.join(models_dir, models_type, model)
             sdf_train_path = os.path.join(model_path, "data_dir", "sdf_train.pkl")
             if not os.path.exists(sdf_train_path):
                 raise FileNotFoundError(
-                    f"Missing sdf_train.pkl for {model}. Did you run convert_sdf.py?"
+                    f"--load-sdf-from-pickle was passed but missing sdf_train.pkl for {model}. Did you run famus-convert-sdf?"
                 )
+
     os.makedirs(output_dir, exist_ok=True)
     for model in models:
         prediction_path = os.path.join(
@@ -87,7 +84,7 @@ def main():
             )
             continue
         logger.info(f"Preprocessing data for {model}")
-        model_path = os.path.join(MODELS_ROOT, models_type, model)
+        model_path = os.path.join(models_dir, models_type, model)
         if args.load_sdf_from_pickle:
             sdf_train_path = os.path.join(model_path, "data_dir", "sdf_train.pkl")
         else:
@@ -131,8 +128,8 @@ def main():
         )
         logger.info(f"Deleting {model} temporary files")
         shutil.rmtree(curr_tmp_path)
-        logger.info(f"Finished classifying {model}")
-    logger.info("Finished easy_classify.py.")
+        logger.info(f"Finished classifying with {model}")
+    logger.info("Finished classification successfully.")
 
 
 if __name__ == "__main__":

@@ -3,119 +3,94 @@ import os
 
 import yaml
 
-from famus import get_cfg, logger
+from famus.logging import setup_logger
 from famus.classification import calculate_threshold
 from famus.train import train
-from famus import MODELS_ROOT
 from famus.cli.preprocess_train import main as preprocess
+from .common import get_common_parser
+from famus.config import get_default_config
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Preprocess data for training and train a model."
+        parents=[get_common_parser()],
+        description="Train a FAMUS model",
     )
     parser.add_argument(
-        "--input_fasta_dir_path",
+        "input_fasta_dir_path",
         type=str,
-        required=True,
-        help="""[REQUIRED] Path to directory containing input fasta files representing protein families.\n
+        help="""Path to directory containing input fasta files representing protein families.
         Must only include fasta files.""",
     )
     parser.add_argument(
-        "--model_type",
-        type=str,
-        help="Type of model to train. Options are 'full' or 'light'. The default value is in cfg.yaml in 'create_subclusters (True = full, False = light)'.",
+        "--create-subclusters",
+        action="store_true",
+        help="Whether to create subclusters within each protein family (True for comprehensive model, False for light model).",
     )
     parser.add_argument(
-        "--model_name",
+        "--model-name",
         type=str,
         help="Optional name for the model which will be used to request it during classification. The default value is the name of the input directory.",
     )
     parser.add_argument(
-        "--unknown_sequences_fasta_path",
+        "--unknown-sequences-fasta-path",
         type=str,
         help="Path to fasta file containing sequences not belonging to any given protein family.",
     )
     parser.add_argument(
-        "--n_processes",
-        type=int,
-        help="Number of processes to use for parallel processing. If not specified, will use cfg.yaml parameter.",
-    )
-    parser.add_argument(
-        "--num_epochs",
+        "--num-epochs",
         type=int,
         help="Number of epochs to train the model. If not specified, will use cfg.yaml parameter.",
     )
     parser.add_argument(
-        "--batch_size",
+        "--batch-size",
         type=int,
         help="Batch size for training the model. If not specified, will use cfg.yaml parameter.",
     )
     parser.add_argument(
-        "--stop_before_training",
+        "--stop-before-training",
         action="store_true",
         help="Stop right before training the model. Useful for running preprocess and train separately.",
     )
     parser.add_argument(
-        "--device",
-        type=str,
-        help="Device to use for training the model (cpu or cuda). If not specified, will use cfg.yaml parameter.",
-    )
-    parser.add_argument(
-        "--chunksize",
-        type=int,
-        help="Number of sequences to process at once for threshold calculation. If not specified, will use cfg.yaml parameter.",
-    )
-    parser.add_argument(
-        "--save_every",
+        "--save-every",
         type=int,
         help="Number of batches after which to save a checkpoint. Default is 100,000.",
     )
-    logger.info("Starting easy_train.py...")
+
     args = parser.parse_args()
-    cfg = get_cfg()
+    cfg_file_path = args.config
+    if cfg_file_path:
+        with open(cfg_file_path, "r") as f:
+            cfg = yaml.safe_load(f)
+    else:
+        cfg = get_default_config()
+    no_log = args.no_log
+    log_dir = args.log_dir or cfg["log_dir"]
+    logger = setup_logger(enable_logging=not no_log, log_dir=log_dir)
     input_fasta_dir_path = args.input_fasta_dir_path
     n_processes = args.n_processes or cfg["n_processes"]
     num_epochs = args.num_epochs or cfg["num_epochs"]
     batch_size = args.batch_size or cfg["batch_size"]
-    model_type = args.model_type
-    device = args.device
+    device = args.device or cfg["device"]
     chunksize = args.chunksize or cfg["chunksize"]
     save_every = args.save_every or cfg["save_every"]
+    models_dir = args.models_dir or cfg["models_dir"]
     model_name = args.model_name
     unknown_sequences_fasta_path = args.unknown_sequences_fasta_path
-    if device:
-        if device not in ["cpu", "cuda"]:
-            raise ValueError("Invalid device. Please choose from 'cpu' or 'cuda")
-    else:
-        device = cfg["user_device"]
-        if device not in ["cpu", "cuda"]:
-            raise ValueError(
-                "Invalid user_device in cfg.yaml. Please choose from 'cpu' or 'cuda'."
-            )
+    create_subclusters = args.create_subclusters or cfg["create_subclusters"]
+    if device not in ["cpu", "cuda"]:
+        raise ValueError("Invalid device. Please choose from 'cpu' or 'cuda")
 
-    if model_type:
-        if model_type not in ["full", "light"]:
-            raise ValueError(
-                "Invalid model type. Please choose from 'full' or 'light'."
-            )
-        create_subclusters = model_type == "full"
-    else:
-        create_subclusters = cfg["create_subclusters"]
-        if not isinstance(create_subclusters, bool):
-            raise ValueError(
-                "Invalid create_subclusters in cfg.yaml. Please set to True or False."
-            )
-        model_type = "full" if create_subclusters else "light"
+    model_type = "full" if create_subclusters else "light"
 
     if not model_name:
         model_name = os.path.basename(input_fasta_dir_path.rstrip("/"))
-    model_path = os.path.join(MODELS_ROOT, model_type, model_name)
+    model_path = os.path.join(models_dir, model_type, model_name)
     model_path = model_path + "/" if model_path[-1] != "/" else model_path
     data_dir_path = os.path.join(model_path, "data_dir/")
-
     if os.path.exists(os.path.join(model_path, "env")):
-        logger.info(f"Model {model_name} already exists. Exiting.")
+        logger.info(f"Model {model_name} already exists with env file. Exiting.")
         return
     elif os.path.exists(model_path):
         previous_model_cfg = os.path.join(model_path, "cfg.yaml")
@@ -167,7 +142,7 @@ def main():
             )
         with open(os.path.join(model_path, "cfg.yaml"), "a") as f:
             f.write(
-                "\n# This file was created by easy_train.py to store model preprocessing and training parameters."
+                "\n# This file was created by train.py to store model preprocessing and training parameters."
             )
             f.write(
                 "\n# Do not edit this file manually before the model training is finished unless you are sure of what you are doing."
@@ -212,7 +187,7 @@ def main():
         )
         with open(os.path.join(model_path, "env"), "w") as f:
             f.write(str(f"THRESHOLD={threshold}"))
-    logger.info("Finished easy_train.py.")
+    logger.info("Finished training successfully.")
 
 
 if __name__ == "__main__":

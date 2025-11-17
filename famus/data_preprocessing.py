@@ -742,10 +742,10 @@ def randomly_split_subclusters(
                     j != i
                 ):  # the group where i == j is the group that will be scored on this profile and is not used to make it
                     profile_records += groups[j]
-            for seq_id in groups[
+            for record in groups[
                 i
             ]:  # saves the metadata for the sequences that should be scored on the current profile
-                split_subcluster_md[ortholog][seq_id] = {
+                split_subcluster_md[ortholog][record.id] = {
                     "test_split": i,
                     "subcluster": subcluster,
                 }

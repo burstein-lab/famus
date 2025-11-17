@@ -1,26 +1,29 @@
-from html import parser
-from famus import MODELS_ROOT
 from famus.sdf import load
 import pickle
 import os
 import sys
 import argparse
+from famus import config
+from .common import get_common_parser
+import yaml
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert sdf_train.json files of installed models to pickle format."
+        parents=[get_common_parser()],
+        description="Convert sdf_train.json files of installed models to pickle format.",
     )
     args = parser.parse_args()
-    if len(sys.argv) > 1:
-        parser.print_help()
-        sys.exit(0)
+    if args.config:
+        with open(args.config, "r") as f:
+            cfg = yaml.safe_load(f)
+    else:
+        cfg = config.get_default_config()
+    models_dir = args.models_dir or cfg["models_dir"]
 
-    for model_type in ["full", "light"]:
-        model_type_root_path = os.path.join(MODELS_ROOT, model_type)
+    for model_type in ["comprehensive", "light"]:
+        model_type_root_path = os.path.join(models_dir, model_type)
         for model in os.listdir(model_type_root_path):
-            if model.endswith(".gitkeep"):
-                continue
             print(f"Checking {model_type} {model}")
             model_path = os.path.join(model_type_root_path, model)
             data_dir_path = os.path.join(model_path, "data_dir")

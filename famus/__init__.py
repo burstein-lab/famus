@@ -19,6 +19,12 @@ class InactiveLogger:
     def error(self, *args, **kwargs):
         pass
 
+    def warning(self, *args, **kwargs):
+        pass
+
+    def debug(self, *args, **kwargs):
+        pass
+
 
 def now() -> str:
     """

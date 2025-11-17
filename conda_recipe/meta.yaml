@@ -50,10 +50,10 @@ test:
     - famus-train --help
     - famus-classify --help
     - famus-convert-sdf --help
-    - hmmalign -h
-    - mafft --help
-    - seqkit version
-    - mmseqs -h
+    - which hmmsearch
+    - which mafft
+    - which mmseqs
+    - which seqkit
 
 about:
   home: https://github.com/burstein-lab/famus

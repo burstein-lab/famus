@@ -660,9 +660,9 @@ def get_nearest_neighbors_and_distances_optimized(
             query_chunk = query_chunk.to(device)
 
             # Initialize result containers for this chunk
-            chunk_size = len(query_chunk)
-            chunk_neighbor_indices = [[] for _ in range(chunk_size)]
-            chunk_neighbor_distances = [[] for _ in range(chunk_size)]
+            chunksize = len(query_chunk)
+            chunk_neighbor_indices = [[] for _ in range(chunksize)]
+            chunk_neighbor_distances = [[] for _ in range(chunksize)]
 
             target_indices_offset = 0
             for j, target_chunk in enumerate(
@@ -706,7 +706,7 @@ def get_nearest_neighbors_and_distances_optimized(
                 target_indices_offset += len(target_chunk)
 
             # Convert to numpy arrays
-            for query_idx in range(chunk_size):
+            for query_idx in range(chunksize):
                 neighbor_indices.append(
                     np.array(chunk_neighbor_indices[query_idx], dtype=int)
                 )
