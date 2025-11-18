@@ -35,7 +35,3 @@ Thumbs.db
 *.tar.bz2
 conda_build/
 
-# Data
-*.fasta
-*.hmm
-*.aln

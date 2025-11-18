@@ -288,7 +288,7 @@ def calc_thresh(
         max_thresholds.append(best_thresh)
     avg_max_f1_score = np.mean(max_f1_scores)
     avg_threshold = np.mean(max_thresholds)
-    logger.info("average fscore: " + str(avg_max_f1_score))
+    logger.info("average labelled/unknown fscore: " + str(avg_max_f1_score))
     logger.info("selected threshold: " + str(avg_threshold))
     return avg_threshold
 

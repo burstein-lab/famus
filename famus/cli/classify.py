@@ -10,12 +10,13 @@ import yaml
 
 from famus.logging import setup_logger
 from .common import get_common_parser
+from .common_model_args import get_common_model_args_parser
 from famus.config import get_default_config
 
 
 def main():
     parser = argparse.ArgumentParser(
-        parents=[get_common_parser()],
+        parents=[get_common_parser(), get_common_model_args_parser()],
         description="Classify protein sequences using installed models.",
     )
     parser.add_argument(

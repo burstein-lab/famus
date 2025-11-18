@@ -13,6 +13,7 @@ build:
     - famus-train = famus.cli.train:main
     - famus-classify = famus.cli.classify:main
     - famus-convert-sdf = famus.cli.convert_sdf:main
+    - famus-install = famus.cli.install_models:main
 
 requirements:
   host:
@@ -50,10 +51,12 @@ test:
     - famus-train --help
     - famus-classify --help
     - famus-convert-sdf --help
+    - famus-install --help
     - which hmmsearch
     - which mafft
     - which mmseqs
     - which seqkit
+
 
 about:
   home: https://github.com/burstein-lab/famus

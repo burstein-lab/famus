@@ -16,15 +16,12 @@ setup(
         "pyyaml>=5.0",
         # NOTE: PyTorch deliberately excluded - users install based on their system
     ],
-    extras_require={
-        "pytorch-cpu": ["torch>=2.0.0"],
-        "pytorch-cuda": ["torch>=2.0.0"],
-    },
     entry_points={
         "console_scripts": [
             "famus-train=famus.cli.train:main",
             "famus-classify=famus.cli.classify:main",
             "famus-convert-sdf=famus.cli.convert_sdf:main",
+            "famus-install=famus.cli.install_models:main",
         ],
     },
     include_package_data=True,

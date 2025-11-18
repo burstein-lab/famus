@@ -8,12 +8,13 @@ from famus.classification import calculate_threshold
 from famus.train import train
 from famus.cli.preprocess_train import main as preprocess
 from .common import get_common_parser
+from .common_model_args import get_common_model_args_parser
 from famus.config import get_default_config
 
 
 def main():
     parser = argparse.ArgumentParser(
-        parents=[get_common_parser()],
+        parents=[get_common_parser(), get_common_model_args_parser()],
         description="Train a FAMUS model",
     )
     parser.add_argument(
@@ -24,8 +25,8 @@ def main():
     )
     parser.add_argument(
         "--create-subclusters",
-        action="store_true",
-        help="Whether to create subclusters within each protein family (True for comprehensive model, False for light model).",
+        action=argparse.BooleanOptionalAction,
+        help="Whether to create subclusters within each protein family (--create-subclusters for comprehensive model, --no-create-subclusters for light model).",
     )
     parser.add_argument(
         "--model-name",
@@ -79,10 +80,12 @@ def main():
     model_name = args.model_name
     unknown_sequences_fasta_path = args.unknown_sequences_fasta_path
     create_subclusters = args.create_subclusters or cfg["create_subclusters"]
+    if not isinstance(create_subclusters, bool):
+        raise ValueError("create_subclusters must be True or False.")
     if device not in ["cpu", "cuda"]:
         raise ValueError("Invalid device. Please choose from 'cpu' or 'cuda")
 
-    model_type = "full" if create_subclusters else "light"
+    model_type = "comprehensive" if create_subclusters else "light"
 
     if not model_name:
         model_name = os.path.basename(input_fasta_dir_path.rstrip("/"))
