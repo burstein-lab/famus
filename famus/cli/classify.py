@@ -53,7 +53,11 @@ Example usage:
         type=str,
         help=f"Type of model(s) to use (comprehensive or light). [{config.DEFAULT_MODEL_TYPE}]",
     )
-    parser.add_argument("--load-sdf-from-pickle", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--load-sdf-from-pickle",
+        action=argparse.BooleanOptionalAction,
+        help="Load sdf_train from pickle instead of json for classification preprocessing.",
+    )
     args = parser.parse_args()
     cfg_file_path = args.config
     cfg = (
