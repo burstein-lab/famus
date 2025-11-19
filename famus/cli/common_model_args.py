@@ -8,25 +8,25 @@ def get_common_model_args_parser():
         "--models-dir",
         default=config.DEFAULT_MODELS_DIR,
         type=str,
-        help="Directory to save or load models",
+        help=f"Directory to save or load models. [{config.DEFAULT_MODELS_DIR}]",
     )
     parser.add_argument(
         "--n-processes",
         default=config.DEFAULT_N_PROCESSES,
         type=int,
-        help="Number of processes to use",
+        help=f"Number of processes to use. [{config.DEFAULT_N_PROCESSES}]",
     )
     parser.add_argument(
         "--device",
         default=config.DEFAULT_USER_DEVICE,
         type=str,
-        help="Device to use (cpu or cuda)",
+        help=f"Device to use (cpu or cuda). [{config.DEFAULT_USER_DEVICE}]",
     )
     parser.add_argument(
         "--chunksize",
         default=config.DEFAULT_CHUNKSIZE,
         type=int,
-        help="Number of sequences to process at once for classification or threshold calculation",
+        help=f"Number of sequences to process at once for classification or threshold calculation. [{config.DEFAULT_CHUNKSIZE}]",
     )
 
     return parser

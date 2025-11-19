@@ -38,7 +38,7 @@ Example usage:
     parser.add_argument(
         "--create-subclusters",
         action=argparse.BooleanOptionalAction,
-        help="Whether to create subclusters within each protein family (--create-subclusters for comprehensive model, --no-create-subclusters for light model).",
+        help=f"Whether to create subclusters within each protein family (--create-subclusters for comprehensive model, --no-create-subclusters for light model). [default: {config.DEFAULT_CREATE_SUBCLUSTERS}]",
     )
     parser.add_argument(
         "--model-name",
@@ -54,56 +54,56 @@ Example usage:
         "--num-epochs",
         default=config.DEFAULT_NUM_EPOCHS,
         type=int,
-        help="Number of epochs to train the model. If not specified, will use cfg.yaml parameter.",
+        help=f"Number of epochs to train the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_NUM_EPOCHS}]",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=config.DEFAULT_BATCH_SIZE,
-        help="Batch size for training the model. If not specified, will use cfg.yaml parameter.",
+        help=f"Batch size for training the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_BATCH_SIZE}]",
     )
     parser.add_argument(
         "--stop-before-training",
         action="store_true",
-        help="Stop right before training the model. Useful for running preprocess and train separately.",
+        help=f"Stop right before training the model. Useful for running preprocess and train separately. [{config.DEFAULT_STOP_BEFORE_TRAINING}]",
     )
     parser.add_argument(
         "--save-every",
         type=int,
-        help="Number of batches after which to save a checkpoint.",
+        help=f"Number of batches after which to save a checkpoint. [{config.DEFAULT_SAVE_EVERY_BATCHES}]",
     )
     parser.add_argument(
         "--mmseqs-n-processes",
         type=int,
-        help="Number of processes to use for MMseqs2 during preprocessing.",
+        help=f"Number of processes to use for MMseqs2 during preprocessing. [{config.DEFAULT_MMSEQS_N_PROCESSES}]",
     )
     parser.add_argument(
         "--sampled-sequences-per-subcluster",
-        help="Number of sequences to sample per subcluster for training during preprocessing.",
+        help=f"Number of sequences to sample per subcluster for training during preprocessing. [{config.DEFAULT_SAMPLED_SEQUENCES_PER_SUBCLUSTER}]",
     )
     parser.add_argument(
         "--fraction-of-sampled-unknown-sequences",
-        help="Fraction of unknown sequences to sample for training during preprocessing.",
+        help=f"Fraction of unknown sequences to sample for training during preprocessing. [{config.DEFAULT_FRACTION_OF_SAMPLED_UNKNOWN_SEQUENCES}]",
     )
     parser.add_argument(
         "--samples-profiles-product-limit",
         type=int,
-        help="Limit on the product of number of sampled sequences and number of profiles during preprocessing.",
+        help=f"Limit on the product of number of sampled sequences and number of profiles during preprocessing. [{config.DEFAULT_SAMPLES_PROFILES_PRODUCT_LIMIT}]",
     )
     parser.add_argument(
         "--mmseqs-cluster-coverage",
         type=float,
-        help="MMseqs2 cluster coverage parameter during preprocessing.",
+        help=f"MMseqs2 cluster coverage parameter during preprocessing. [{config.DEFAULT_MMSEQS_CLUSTER_COVERAGE}]",
     )
     parser.add_argument(
         "--mmseqs-cluster-identity",
         type=float,
-        help="MMseqs2 cluster identity parameter during preprocessing.",
+        help=f"MMseqs2 cluster identity parameter during preprocessing. [{config.DEFAULT_MMSEQS_CLUSTER_IDENTITY}]",
     )
     parser.add_argument(
         "--mmseqs-coverage-subclusters",
         type=float,
-        help="MMseqs2 coverage for subclusters parameter during preprocessing.",
+        help=f"MMseqs2 coverage for subclusters parameter during preprocessing. [{config.DEFAULT_MMSEQS_COVERAGE_SUBCLUSTERS}]",
     )
 
     args = parser.parse_args()

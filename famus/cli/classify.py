@@ -51,7 +51,7 @@ Example usage:
     parser.add_argument(
         "--model-type",
         type=str,
-        help="Type of model(s) to use (comprehensive or light)",
+        help=f"Type of model(s) to use (comprehensive or light). [{config.DEFAULT_MODEL_TYPE}]",
     )
     parser.add_argument("--load-sdf-from-pickle", action=argparse.BooleanOptionalAction)
     args = parser.parse_args()

@@ -181,6 +181,7 @@ def main(
             subclusters_dir=subcluster_dir,
             output_dir=augmented_subcluster_dir,
             tmp_dir=tmp_dir_path,
+            min_sequences_per_subcluster=6,
             n_processes=n_processes,
         )
         state["augmented_subcluster_dir"] = augmented_subcluster_dir
@@ -245,6 +246,7 @@ def main(
             output_full_hmmsearch_results_path=full_hmmsearch_results,
             tmp_dir_path=hmmsearch_tmp_path,
             n_processes=n_processes,
+            no_filter=False,
         )
         state["full_hmmsearch_results"] = full_hmmsearch_results
         yaml.dump(state, open(state_file_path, "w+"))
