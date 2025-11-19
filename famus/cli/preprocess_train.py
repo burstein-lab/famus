@@ -18,6 +18,7 @@ def main(
     number_of_sampled_sequences_per_subcluster,
     fraction_of_sampled_unknown_sequences,
     samples_profiles_product_limit,
+    sequences_max_len_product_limit,
     mmseqs_cluster_coverage,
     mmseqs_cluster_identity,
     mmseqs_coverage_subclusters,
@@ -85,11 +86,11 @@ def main(
         )
 
     if (
-        not isinstance(samples_profiles_product_limit, int)
-        or samples_profiles_product_limit < 1
+        not isinstance(sequences_max_len_product_limit, int)
+        or sequences_max_len_product_limit < 1
     ):
         raise ValueError(
-            f"samples_profiles_product_limit must be a positive integer. got {samples_profiles_product_limit}"
+            f"sequences_max_len_product_limit must be a positive integer. got {sequences_max_len_product_limit}"
         )
     if not isinstance(create_subclusters, bool):
         raise ValueError(
@@ -161,7 +162,7 @@ def main(
             mmseqs_cluster_coverage=mmseqs_cluster_coverage,
             mmseqs_cluster_identity=mmseqs_cluster_identity,
             mmseqs_coverage_subclusters=mmseqs_coverage_subclusters,
-            samples_profiles_product_limit=samples_profiles_product_limit,
+            sequences_max_len_product_limit=sequences_max_len_product_limit,
             mmseqs_n_processes=mmseqs_n_processes,
         )
         state["subcluster_dir"] = subcluster_dir

@@ -24,7 +24,7 @@ def main():
         epilog=f"""
 Example usage:
 
-  # {prog} --unknown-sequences-fasta-path examples/unknown_sequences.fasta --log-dir logs/ --n-processes 32 --models-dir models/ --save-every 100_000 --device cpu --num-epochs 20 --batch-size 32 --create-subclusters examples/example_orthologs/
+  # {prog} --unknown-sequences-fasta-path examples/unknowns.fasta --log-dir logs/ --n-processes 32 --models-dir models/ --save-every 100_000 --device cpu --num-epochs 20 --batch-size 32 --create-subclusters examples/example_orthologs/
 
   Full description of arguments can be found at https://github.com/burstein-lab/famus
         """,
@@ -91,6 +91,11 @@ Example usage:
         help=f"Limit on the product of number of sampled sequences and number of profiles during preprocessing. [{config.DEFAULT_SAMPLES_PROFILES_PRODUCT_LIMIT}]",
     )
     parser.add_argument(
+        "--sequences-max-len-product-limit",
+        type=int,
+        help=f"Limit on the product of number of sequences and their maximum length during preprocessing. [{config.DEFAULT_SEQUENCES_MAX_LEN_PRODUCT_LIMIT}]",
+    )
+    parser.add_argument(
         "--mmseqs-cluster-coverage",
         type=float,
         help=f"MMseqs2 cluster coverage parameter during preprocessing. [{config.DEFAULT_MMSEQS_CLUSTER_COVERAGE}]",
@@ -133,6 +138,9 @@ Example usage:
     )
     samples_profiles_product_limit = (
         args.samples_profiles_product_limit or cfg["samples_profiles_product_limit"]
+    )
+    sequences_max_len_product_limit = (
+        args.sequences_max_len_product_limit or cfg["sequences_max_len_product_limit"]
     )
     mmseqs_cluster_coverage = (
         args.mmseqs_cluster_coverage or cfg["mmseqs_cluster_coverage"]
@@ -223,6 +231,7 @@ Example usage:
         number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
         fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
         samples_profiles_product_limit=samples_profiles_product_limit,
+        sequences_max_len_product_limit=sequences_max_len_product_limit,
         mmseqs_cluster_coverage=mmseqs_cluster_coverage,
         mmseqs_cluster_identity=mmseqs_cluster_identity,
         mmseqs_coverage_subclusters=mmseqs_coverage_subclusters,

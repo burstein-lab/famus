@@ -1137,7 +1137,7 @@ def single_ortholog_to_subclusters(
     mmseqs_cluster_coverage,
     mmseqs_cluster_identity,
     mmseqs_coverage_subclusters,
-    samples_profiles_product_limit,
+    sequences_max_len_product_limit,
     mmseqs_n_processes,
 ) -> None:
     logger.info(f"processing {file_path}")
@@ -1221,7 +1221,7 @@ def single_ortholog_to_subclusters(
                 )
             ]
             prod = len(records) * max([len(record.seq) for record in records])
-            if prod < samples_profiles_product_limit:
+            if prod < sequences_max_len_product_limit:
                 shutil.copyfile(
                     f"{tmp_nr90}{fname}_rep_seq_renamed.fasta",
                     f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
@@ -1566,7 +1566,7 @@ def orthologs_to_subclusters(
     mmseqs_cluster_coverage,
     mmseqs_cluster_identity,
     mmseqs_coverage_subclusters,
-    samples_profiles_product_limit,
+    sequences_max_len_product_limit,
     mmseqs_n_processes,
 ) -> None:
     """
@@ -1616,7 +1616,7 @@ def orthologs_to_subclusters(
             mmseqs_cluster_coverage,
             mmseqs_cluster_identity,
             mmseqs_coverage_subclusters,
-            samples_profiles_product_limit,
+            sequences_max_len_product_limit,
             mmseqs_n_processes,
         )
         for fp in input_fasta_file_paths
