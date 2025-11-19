@@ -61,6 +61,7 @@ def get_default_config():
         "models_dir": str(DEFAULT_MODELS_DIR),
         "num_epochs": DEFAULT_NUM_EPOCHS,
         "batch_size": DEFAULT_BATCH_SIZE,
+        "save_every": DEFAULT_SAVE_EVERY_BATCHES,
         "chunksize": DEFAULT_CHUNKSIZE,
         "device": DEFAULT_USER_DEVICE,
         "model_type": DEFAULT_MODEL_TYPE,

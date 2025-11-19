@@ -11,7 +11,6 @@ def get_common_parser():
     )
     parser.add_argument(
         "--log-dir",
-        default=config.DEFAULT_LOG_DIR,
         type=str,
         help=f"Directory to save logs. [{config.DEFAULT_LOG_DIR}]",
     )

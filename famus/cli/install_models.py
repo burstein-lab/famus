@@ -215,7 +215,6 @@ Full description of arguments can be found at https://github.com/burstein-lab/fa
     )
     parser.add_argument(
         "--models-dir",
-        default=config.DEFAULT_MODELS_DIR,
         type=str,
         help="Directory to save the installed models to",
     )

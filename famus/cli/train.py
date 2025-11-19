@@ -52,14 +52,12 @@ Example usage:
     )
     parser.add_argument(
         "--num-epochs",
-        default=config.DEFAULT_NUM_EPOCHS,
         type=int,
         help=f"Number of epochs to train the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_NUM_EPOCHS}]",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=config.DEFAULT_BATCH_SIZE,
         help=f"Batch size for training the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_BATCH_SIZE}]",
     )
     parser.add_argument(
