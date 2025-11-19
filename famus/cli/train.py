@@ -108,6 +108,21 @@ Example usage:
         type=float,
         help=f"MMseqs2 coverage for subclusters parameter during preprocessing. [{config.DEFAULT_MMSEQS_COVERAGE_SUBCLUSTERS}]",
     )
+    parser.add_argument(
+        "--log-to-wandb",
+        action=argparse.BooleanOptionalAction,
+        help=f"Whether to log training to Weights & Biases. [{config.DEFAULT_LOG_TO_WANDB}]",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        help=f"Weights & Biases project name to use if logging to wandb. [{config.DEFAULT_WANDB_PROJECT}]",
+    )
+    parser.add_argument(
+        "--wandb-api-key-path",
+        type=str,
+        help=f"Path to file containing Weights & Biases API key to use if logging to wandb. [{config.DEFAULT_WANDB_API_KEY_PATH}]",
+    )
 
     args = parser.parse_args()
     cfg_file_path = args.config

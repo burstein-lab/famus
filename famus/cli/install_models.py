@@ -19,6 +19,17 @@ AVAILABLE_TYPES = ["comprehensive", "light"]
 
 TYPE_MAP = {"comprehensive": "full", "light": "light"}
 
+MODEL_TO_THRESHOLD = {
+    "kegg_comprehensive": 0.19,
+    "kegg_light": 0.19,
+    "orthodb_comprehensive": 0.19,
+    "orthodb_light": 0.19,
+    "interpro_comprehensive": 0.34,
+    "interpro_light": 0.35,
+    "eggnog_comprehensive": 0.19,
+    "eggnog_light": 0.19,
+}
+
 
 class DownloadProgressBar(tqdm):
     def update_to(self, b=1, bsize=1, tsize=None):
@@ -172,6 +183,10 @@ def extract_model(tar_path, model_name, model_type, models_dir):
                 tar.extractall(path=data_dir)
             os.remove(os.path.join(data_dir, "subcluster_profiles.tar.gz"))
 
+        with open(os.path.join(target_dir, "env"), "w") as f:
+            f.write(
+                "THRESHOLD=" + str(MODEL_TO_THRESHOLD[f"{model_name}_{model_type}"])
+            )
         logger.info(f"Installed {model_name}_{model_type} successfully.")
 
     except Exception as e:
