@@ -9,16 +9,26 @@ import yaml
 
 
 def main():
+    prog = os.path.basename(sys.argv[0])
+    if prog.endswith(".py"):
+        prog = "python -m famus.cli.convert_sdf"
     parser = argparse.ArgumentParser(
         parents=[get_common_parser()],
         description="Convert sdf_train.json files of installed models to pickle format.",
+        prog=prog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Example usage:
+
+  # {prog}
+
+  Full description of this module can be found at https://github.com/burstein-lab/famus
+
+        """,
     )
     args = parser.parse_args()
-    if args.config:
-        with open(args.config, "r") as f:
-            cfg = yaml.safe_load(f)
-    else:
-        cfg = config.get_default_config()
+    config_path = args.config
+    cfg = config.load_cfg(config_path) if config_path else config.get_default_config()
     models_dir = args.models_dir or cfg["models_dir"]
 
     for model_type in ["comprehensive", "light"]:

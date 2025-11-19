@@ -42,8 +42,6 @@ def sample_sequences(input_file: str, output_file: str, sample_size: int) -> Non
     )
 
 
-
-
 def now() -> str:
     """
     Get the current time as a string.

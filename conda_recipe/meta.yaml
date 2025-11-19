@@ -14,6 +14,7 @@ build:
     - famus-classify = famus.cli.classify:main
     - famus-convert-sdf = famus.cli.convert_sdf:main
     - famus-install = famus.cli.install_models:main
+    - famus-defaults = famus.config:main
 
 requirements:
   host:
@@ -52,6 +53,7 @@ test:
     - famus-classify --help
     - famus-convert-sdf --help
     - famus-install --help
+    - famus-defaults
     - which hmmsearch
     - which mafft
     - which mmseqs

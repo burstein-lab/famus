@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from famus.logging import setup_logger, logger
 from .common import get_common_parser
-from famus.config import DEFAULT_MODELS_DIR
+from famus import config
 
 ZENODO_BASE = "https://zenodo.org/records/14941374/files"
 
@@ -182,32 +182,40 @@ def extract_model(tar_path, model_name, model_type, models_dir):
 
 
 def main():
+    prog = os.path.basename(sys.argv[0])
+    if prog.endswith(".py"):
+        prog = "python -m famus.cli.install_models"
     parser = argparse.ArgumentParser(
         parents=[get_common_parser()],
         description="Download and install FAMUS pre-trained models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        prog=prog,
         epilog=f"""
 Examples:
+
   # Install specific models
-  famus-install --models kegg_comprehensive orthodb_light
+  {prog} --models kegg_comprehensive orthodb_light
   
   # Install all comprehensive models
-  famus-install --models kegg_comprehensive orthodb_comprehensive interpro_comprehensive eggnog_comprehensive
+  {prog} --models kegg_comprehensive orthodb_comprehensive interpro_comprehensive eggnog_comprehensive
   
   # Install to custom directory
-  famus-install --models kegg_light --models-dir /path/to/my/models
+  {prog} --models kegg_light --models-dir /path/to/my/models
   
   # Keep downloaded tar files
-  famus-install --models kegg_light --keep-tars
+  {prog} --models kegg_light --keep-tars
 
 Available models: {", ".join(AVAILABLE_MODELS)}
 Available types: {", ".join(AVAILABLE_TYPES)}
+
 Format: <model>_<type> (e.g., kegg_comprehensive, orthodb_light)
+
+Full description of arguments can be found at https://github.com/burstein-lab/famus
         """,
     )
     parser.add_argument(
         "--models-dir",
-        default=DEFAULT_MODELS_DIR,
+        default=config.DEFAULT_MODELS_DIR,
         type=str,
         help="Directory to save the installed models to",
     )
@@ -232,28 +240,20 @@ Format: <model>_<type> (e.g., kegg_comprehensive, orthodb_light)
     )
 
     args = parser.parse_args()
-
-    # Setup logging
-    logger = setup_logger(enable_logging=not args.no_log, log_dir=args.log_dir)
-
-    # Get models directory
-    models_dir = Path(args.models_dir) if args.models_dir else DEFAULT_MODELS_DIR
-    models_dir = Path(models_dir)
+    cfg_path = args.config
+    cfg = config.load_cfg(cfg_path) if cfg_path else config.get_default_config()
+    no_log = args.no_log or cfg["no_log"]
+    log_dir = args.log_dir or cfg["log_dir"]
+    models_dir = args.models_dir or cfg["models_dir"]
+    logger = setup_logger(enable_logging=not no_log, log_dir=log_dir)
     models_dir.mkdir(parents=True, exist_ok=True)
-
-    # Create comprehensive and light subdirectories
     (models_dir / "comprehensive").mkdir(exist_ok=True)
     (models_dir / "light").mkdir(exist_ok=True)
-
-    # Set download directory
     download_dir = args.download_dir if args.download_dir else Path.cwd()
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
-
     logger.info(f"Models directory: {models_dir}")
     logger.info(f"Download directory: {download_dir}")
-
-    # Parse and validate model specifications
     models_to_install = []
     try:
         for model_spec in args.models:
@@ -264,38 +264,24 @@ Format: <model>_<type> (e.g., kegg_comprehensive, orthodb_light)
         sys.exit(1)
 
     logger.info(f"Installing {len(models_to_install)} model(s)\n")
-
-    # Track success/failure
     successful = []
     failed = []
-
-    # Process each model
     for model_name, model_type in models_to_install:
         model_spec = f"{model_name}_{model_type}"
-
-        # Check if already installed
         target_dir = models_dir / model_type / model_name
         if (target_dir / "env").exists():
             logger.info(f"{model_spec} already installed")
             successful.append(model_spec)
             continue
-
         try:
             logger.info(f"{'=' * 60}")
             logger.info(f"Installing {model_spec}")
             logger.info(f"{'=' * 60}")
-
-            # Download
             tar_path = download_model_tar(model_name, model_type, download_dir)
-
-            # Extract
             extract_model(tar_path, model_name, model_type, models_dir)
-
-            # Cleanup tar file if requested
             if not args.keep_tars:
                 logger.info(f"Removing {os.path.basename(tar_path)}")
                 os.remove(tar_path)
-
             successful.append(model_spec)
             logger.info("")
 
@@ -304,7 +290,6 @@ Format: <model>_<type> (e.g., kegg_comprehensive, orthodb_light)
             failed.append(model_spec)
             logger.info("")
 
-    # Summary
     logger.info(f"{'=' * 60}")
     logger.info("INSTALLATION SUMMARY")
     logger.info(f"{'=' * 60}")

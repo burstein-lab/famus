@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 from famus.classification import classify
 from famus.cli.preprocess_classify import main as preprocess
@@ -11,13 +12,25 @@ import yaml
 from famus.logging import setup_logger
 from .common import get_common_parser
 from .common_model_args import get_common_model_args_parser
-from famus.config import get_default_config
+from famus import config
 
 
 def main():
+    prog = os.path.basename(sys.argv[0])
+    if prog.endswith(".py"):
+        prog = "python -m famus.cli.classify"
     parser = argparse.ArgumentParser(
         parents=[get_common_parser(), get_common_model_args_parser()],
         description="Classify protein sequences using installed models.",
+        prog=prog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Example usage:
+
+  # {prog} --log-dir logs/ --n-processes 32 --device cpu --model-type comprehensive --models-dir models/ --models example_orthologs examples/example_for_classification.fasta
+
+  Full description of arguments can be found at https://github.com/burstein-lab/famus
+        """,
     )
     parser.add_argument(
         "input_fasta_file_path",
@@ -43,12 +56,10 @@ def main():
     parser.add_argument("--load-sdf-from-pickle", action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
     cfg_file_path = args.config
-    if cfg_file_path:
-        with open(cfg_file_path, "r") as f:
-            cfg = yaml.safe_load(f)
-    else:
-        cfg = get_default_config()
-    no_log = args.no_log
+    cfg = (
+        config.load_cfg(cfg_file_path) if cfg_file_path else config.get_default_config()
+    )
+    no_log = args.no_log or cfg["no_log"]
     log_dir = args.log_dir or cfg["log_dir"]
     logger = setup_logger(enable_logging=not no_log, log_dir=log_dir)
     logger.info("Starting classification...")

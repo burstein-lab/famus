@@ -1,7 +1,8 @@
 include README.md
 include LICENSE
 include setup.py
-include pyproject.toml
+include requirements.txt
+include example_cfg.yaml
 
 # Package code only
 include famus/classification.py
@@ -15,7 +16,6 @@ include famus/sdfloader.py
 include famus/train.py
 include famus/cli/*
 include famus/qmafft
-include famus/cfg.yaml
 
 # Conda recipe
 recursive-include conda_recipe/ *
@@ -42,6 +42,6 @@ prune examples
 prune tests/output
 prune eval
 prune data
-
-include famus/models/*/*/env
-include famus/tmp/logs/.gitkeep
+prune models
+prune logs
+prune tmp

@@ -13,6 +13,4 @@ def get_common_parser():
     )
     parser.add_argument("--config", type=str, help="Path to config file")
 
-
-
     return parser

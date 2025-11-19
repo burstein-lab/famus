@@ -4,7 +4,7 @@ import os
 import yaml
 
 from famus import data_preprocessing as dp
-from famus import get_cfg, logger
+from famus.logging import logger
 
 
 def main(
@@ -12,8 +12,8 @@ def main(
     input_full_profiles_dir_path: str,
     input_sdf_train_path: str,
     data_dir_path: str,
-    n_processes: int = None,
-    load_sdf_from_pickle: bool = False,
+    n_processes,
+    load_sdf_from_pickle,
 ) -> None:
     logger.info("Starting preprocessing")
     logger.info("Input fasta: {}".format(input_fasta_file_path))
@@ -21,10 +21,6 @@ def main(
     logger.info("Input sdf train: {}".format(input_sdf_train_path))
     logger.info("Data directory: {}".format(data_dir_path))
 
-    cfg = get_cfg()
-
-    if not n_processes:
-        n_processes = cfg["n_processes"]
     logger.info("Number of processes: {}".format(n_processes))
     state_file_path = os.path.join(data_dir_path, ".classify_preprocessing_state")
 

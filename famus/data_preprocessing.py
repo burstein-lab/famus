@@ -15,9 +15,9 @@ import numpy as np
 from Bio import SeqIO
 from tqdm import tqdm
 
-from famus import get_cfg, logger, now
+from famus.logging import logger
 from famus.sdf import from_sparse_dict, load
-from famus.utils import concatenate_files, even_split
+from famus.utils import concatenate_files, even_split, now
 
 SUBCLUSTER_SUFFIX_PATTERN = r"\.sub_cluster\.cluster\.\d+\.fasta$"
 SPLIT_SUBCLUSTER_SUFFIX_PATTERN = r"\.sub_cluster\.cluster\.\d+\.\d+\.fasta$"
@@ -26,14 +26,7 @@ PreparePhmmArgs = namedtuple("PreparePhmmArgs", "path fasta_path")
 SplitHMMSearchArgs = namedtuple(
     "SplitHMMSearchArgs", "profile_path file_for_scoring output_path"
 )
-cfg = get_cfg()
-n_processes = cfg["n_processes"]
-mmseq_n_processes = cfg["processes_per_mmseqs_job"]
-number_of_sampled_sequences_per_subcluster = cfg[
-    "number_of_sampled_sequences_per_subcluster"
-]
-fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
-samples_profiles_product_limit = cfg["samples_profiles_product_limit"]
+
 qmafft_path = files("famus") / "qmafft"
 
 
@@ -144,9 +137,9 @@ def prepare_full_hmmsearch_input(
     tmp_dir_path: str,
     input_unknown_sequences_fasta_path: str,
     output_full_hmmsearch_input_path: str,
-    number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
-    fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
-    samples_profiles_product_limit=samples_profiles_product_limit,
+    number_of_sampled_sequences_per_subcluster,
+    fraction_of_sampled_unknown_sequences,
+    samples_profiles_product_limit,
 ):
     """
     Creates a single fasta file containing sequences from subclusters and unknown sequences for hmmsearch.
@@ -656,8 +649,8 @@ def augment_small_subclusters(
     subclusters_dir: str,
     output_dir: str,
     tmp_dir: str,
-    min_sequences_per_subcluster: int = 6,
-    n_processes: int = n_processes,
+    min_sequences_per_subcluster,
+    n_processes,
 ) -> None:
     """
     Augments small subclusters by creating alignments and profiles, then emitting sequences from the profiles and concatenating them with the original subcluster fasta files.
@@ -774,7 +767,10 @@ def _create_subcluster_profile(
 
 
 def create_subcluster_profiles(
-    subcluster_dir: str, profile_dir: str, tmp_dir_path: str, n_processes=n_processes
+    subcluster_dir: str,
+    profile_dir: str,
+    tmp_dir_path: str,
+    n_processes,
 ) -> None:
     """
     Creates profiles from subcluster fasta files.
@@ -1002,8 +998,8 @@ def split_profiles_hmmsearch(
     input_split_profiles_dir_path: str,
     input_fasta_dir_for_scoring_path: str,
     output_split_hmmsearch_results_path: str,
-    tmp_path="",
-    n_processes=n_processes,
+    tmp_path,
+    n_processes,
 ) -> None:
     """
     Runs hmmsearch on a split fasta file using a split profile.
@@ -1137,12 +1133,12 @@ def single_ortholog_to_subclusters(
     tmp_clu: str,
     tmp_hmmsearch: str,
     output_rep_seq_dir: str,
-    create_subclusters=True,
-    mmseqs_cluster_coverage=0.8,
-    mmseqs_cluster_identity=0.9,
-    mmseqs_cluster_coverage_subclusters=0.5,
-    max_fasta_n_sequences_times_longest_sequence=500_000_000,
-    mmseq_n_processes=4,
+    create_subclusters,
+    mmseqs_cluster_coverage,
+    mmseqs_cluster_identity,
+    mmseqs_coverage_subclusters,
+    samples_profiles_product_limit,
+    mmseqs_n_processes,
 ) -> None:
     logger.info(f"processing {file_path}")
     done_ortholog_files_dir = os.path.join(tmp_hmmsearch, "done_ortholog_files")
@@ -1180,7 +1176,7 @@ def single_ortholog_to_subclusters(
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}.fasta")
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}.mapping")
         # initial clustering to remove redundancy
-        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseq_n_processes} -s 7.5 -c {mmseqs_cluster_coverage} --min-seq-id {mmseqs_cluster_identity}"
+        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}.fasta {tmp_nr90}{fname} {tmp_nr90}{fname}_tmp --threads {mmseqs_n_processes} -s 7.5 -c {mmseqs_cluster_coverage} --min-seq-id {mmseqs_cluster_identity}"
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_tmp")
         tmp_files_and_dirs.append(f"{tmp_nr90}{fname}_rep_seq.fasta")
         logger.debug(f"running cmd: {cmd}")
@@ -1225,7 +1221,7 @@ def single_ortholog_to_subclusters(
                 )
             ]
             prod = len(records) * max([len(record.seq) for record in records])
-            if prod < max_fasta_n_sequences_times_longest_sequence:
+            if prod < samples_profiles_product_limit:
                 shutil.copyfile(
                     f"{tmp_nr90}{fname}_rep_seq_renamed.fasta",
                     f"{subclusters_output_path}{fname}.sub_cluster.cluster.1.fasta",
@@ -1247,7 +1243,7 @@ def single_ortholog_to_subclusters(
 
         # clustering to get subclusters out of the representative sequences
 
-        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c {mmseqs_cluster_coverage_subclusters} {tmp_clu}{fname}_tmp --threads {mmseq_n_processes}"
+        cmd = f"mmseqs easy-cluster {tmp_nr90}{fname}_rep_seq.fasta {tmp_clu}{fname} -s 7.5 -c {mmseqs_coverage_subclusters} {tmp_clu}{fname}_tmp --threads {mmseqs_n_processes}"
         logger.debug(f"running cmd: {cmd}")
         result = subprocess.run(
             cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -1358,7 +1354,7 @@ def single_ortholog_to_subclusters(
             qmafft(
                 input_path=f"{subclusters_output_path}{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
                 output_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
-                n_processes=mmseq_n_processes,
+                n_processes=mmseqs_n_processes,
             )
             tmp_files_and_dirs.append(
                 f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln"
@@ -1368,7 +1364,7 @@ def single_ortholog_to_subclusters(
                 input_path=f"{alignments_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.aln",
                 output_path=f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm",
                 name=f"{fname}.sub_cluster.cluster.{subcluster_counter}.fasta",
-                n_processes=mmseq_n_processes,
+                n_processes=mmseqs_n_processes,
             )
             tmp_files_and_dirs.append(
                 f"{profiles_dir}{fname}.sub_cluster.cluster.{subcluster_counter}.hmm"
@@ -1446,7 +1442,7 @@ def single_ortholog_to_subclusters(
 
                 cmd = "hmmsearch -o /dev/null --tblout {} --max -E 10000 --cpu {} {} {}".format(
                     f"{tmp_hmmsearch}{fname}.hmmsearch",
-                    mmseq_n_processes,
+                    mmseqs_n_processes,
                     f"{profiles_dir}{fname}.hmm.db",
                     leftover_file_path,
                 )
@@ -1565,12 +1561,13 @@ def orthologs_to_subclusters(
     output_subcluster_dir: str,
     output_rep_seq_dir: str,
     tmp_dir_path: str,
-    n_processes=n_processes,
-    create_subclusters=True,
-    mmseqs_cluster_coverage=0.8,
-    mmseqs_cluster_identity=0.9,
-    mmseqs_cluster_coverage_subclusters=0.5,
-    max_fasta_n_sequences_times_longest_sequence=500_000_000,
+    n_processes,
+    create_subclusters,
+    mmseqs_cluster_coverage,
+    mmseqs_cluster_identity,
+    mmseqs_coverage_subclusters,
+    samples_profiles_product_limit,
+    mmseqs_n_processes,
 ) -> None:
     """
     Clusters ortholog fasta files into subclusters.
@@ -1604,7 +1601,7 @@ def orthologs_to_subclusters(
     ]
     if len(input_fasta_file_paths) == 0:
         raise ValueError(f"no files with .fasta suffix found in {ortholog_fasta_dir}")
-    pool = mp.Pool(processes=n_processes // mmseq_n_processes)
+    pool = mp.Pool(processes=n_processes // mmseqs_n_processes)
     logger.debug("starting single_ortholog_to_subclusters")
 
     args = [
@@ -1618,9 +1615,9 @@ def orthologs_to_subclusters(
             create_subclusters,
             mmseqs_cluster_coverage,
             mmseqs_cluster_identity,
-            mmseqs_cluster_coverage_subclusters,
-            max_fasta_n_sequences_times_longest_sequence,
-            mmseq_n_processes,
+            mmseqs_coverage_subclusters,
+            samples_profiles_product_limit,
+            mmseqs_n_processes,
         )
         for fp in input_fasta_file_paths
         if not os.path.exists(

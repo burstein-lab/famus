@@ -1,6 +1,6 @@
 import argparse
 import os
-
+import sys
 import yaml
 
 from famus.logging import setup_logger
@@ -9,13 +9,25 @@ from famus.train import train
 from famus.cli.preprocess_train import main as preprocess
 from .common import get_common_parser
 from .common_model_args import get_common_model_args_parser
-from famus.config import get_default_config
+from famus import config
 
 
 def main():
+    prog = os.path.basename(sys.argv[0])
+    if prog.endswith(".py"):
+        prog = "python -m famus.cli.train"
     parser = argparse.ArgumentParser(
         parents=[get_common_parser(), get_common_model_args_parser()],
         description="Train a FAMUS model",
+        prog=prog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Example usage:
+
+  # {prog} --unknown-sequences-fasta-path examples/unknown_sequences.fasta --log-dir logs/ --n-processes 32 --models-dir models/ --save-every 100_000 --device cpu --num-epochs 20 --batch-size 32 --create-subclusters examples/example_orthologs/
+
+  Full description of arguments can be found at https://github.com/burstein-lab/famus
+        """,
     )
     parser.add_argument(
         "input_fasta_dir_path",
@@ -40,12 +52,14 @@ def main():
     )
     parser.add_argument(
         "--num-epochs",
+        default=config.DEFAULT_NUM_EPOCHS,
         type=int,
         help="Number of epochs to train the model. If not specified, will use cfg.yaml parameter.",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
+        default=config.DEFAULT_BATCH_SIZE,
         help="Batch size for training the model. If not specified, will use cfg.yaml parameter.",
     )
     parser.add_argument(
@@ -56,17 +70,48 @@ def main():
     parser.add_argument(
         "--save-every",
         type=int,
-        help="Number of batches after which to save a checkpoint. Default is 100,000.",
+        help="Number of batches after which to save a checkpoint.",
+    )
+    parser.add_argument(
+        "--mmseqs-n-processes",
+        type=int,
+        help="Number of processes to use for MMseqs2 during preprocessing.",
+    )
+    parser.add_argument(
+        "--sampled-sequences-per-subcluster",
+        help="Number of sequences to sample per subcluster for training during preprocessing.",
+    )
+    parser.add_argument(
+        "--fraction-of-sampled-unknown-sequences",
+        help="Fraction of unknown sequences to sample for training during preprocessing.",
+    )
+    parser.add_argument(
+        "--samples-profiles-product-limit",
+        type=int,
+        help="Limit on the product of number of sampled sequences and number of profiles during preprocessing.",
+    )
+    parser.add_argument(
+        "--mmseqs-cluster-coverage",
+        type=float,
+        help="MMseqs2 cluster coverage parameter during preprocessing.",
+    )
+    parser.add_argument(
+        "--mmseqs-cluster-identity",
+        type=float,
+        help="MMseqs2 cluster identity parameter during preprocessing.",
+    )
+    parser.add_argument(
+        "--mmseqs-coverage-subclusters",
+        type=float,
+        help="MMseqs2 coverage for subclusters parameter during preprocessing.",
     )
 
     args = parser.parse_args()
     cfg_file_path = args.config
-    if cfg_file_path:
-        with open(cfg_file_path, "r") as f:
-            cfg = yaml.safe_load(f)
-    else:
-        cfg = get_default_config()
-    no_log = args.no_log
+    cfg = (
+        config.load_cfg(cfg_file_path) if cfg_file_path else config.get_default_config()
+    )
+    no_log = args.no_log or cfg["no_log"]
     log_dir = args.log_dir or cfg["log_dir"]
     logger = setup_logger(enable_logging=not no_log, log_dir=log_dir)
     input_fasta_dir_path = args.input_fasta_dir_path
@@ -77,6 +122,28 @@ def main():
     chunksize = args.chunksize or cfg["chunksize"]
     save_every = args.save_every or cfg["save_every"]
     models_dir = args.models_dir or cfg["models_dir"]
+    mmseqs_n_processes = args.mmseqs_n_processes or cfg["mmseq_n_processes"]
+    number_of_sampled_sequences_per_subcluster = (
+        args.sampled_sequences_per_subcluster
+        or cfg["number_of_sampled_sequences_per_subcluster"]
+    )
+    fraction_of_sampled_unknown_sequences = (
+        args.fraction_of_sampled_unknown_sequences
+        or cfg["fraction_of_sampled_unknown_sequences"]
+    )
+    samples_profiles_product_limit = (
+        args.samples_profiles_product_limit or cfg["samples_profiles_product_limit"]
+    )
+    mmseqs_cluster_coverage = (
+        args.mmseqs_cluster_coverage or cfg["mmseqs_cluster_coverage"]
+    )
+    mmseqs_cluster_identity = (
+        args.mmseqs_cluster_identity or cfg["mmseqs_cluster_identity"]
+    )
+    mmseqs_coverage_subclusters = (
+        args.mmseqs_coverage_subclusters or cfg["mmseqs_coverage_subclusters"]
+    )
+
     model_name = args.model_name
     unknown_sequences_fasta_path = args.unknown_sequences_fasta_path
     create_subclusters = args.create_subclusters or cfg["create_subclusters"]
@@ -92,6 +159,7 @@ def main():
     model_path = os.path.join(models_dir, model_type, model_name)
     model_path = model_path + "/" if model_path[-1] != "/" else model_path
     data_dir_path = os.path.join(model_path, "data_dir/")
+
     if os.path.exists(os.path.join(model_path, "env")):
         logger.info(f"Model {model_name} already exists with env file. Exiting.")
         return
@@ -112,10 +180,7 @@ def main():
                 != previous_cfg["unknown_sequences_fasta_path"]
             ):
                 discordant_keys.append("unknown_sequences_fasta_path")
-            if num_epochs != previous_cfg["num_epochs"]:
-                discordant_keys.append("num_epochs")
-            if batch_size != previous_cfg["batch_size"]:
-                discordant_keys.append("batch_size")
+
             if model_type != previous_cfg["model_type"]:
                 discordant_keys.append("model_type")
             if discordant_keys:
@@ -126,7 +191,6 @@ def main():
                         "the model directory or change the parameters to match the previous run: "
                         f"input_fasta_dir_path={previous_cfg['input_fasta_dir_path']}, "
                         f"unknown_sequences_fasta_path={previous_cfg['unknown_sequences_fasta_path']}, "
-                        f"num_epochs={previous_cfg['num_epochs']}, batch_size={previous_cfg['batch_size']}, "
                         f"model_type={previous_cfg['model_type']}."
                     )
                 )
@@ -138,8 +202,6 @@ def main():
                     "model_type": model_type,
                     "input_fasta_dir_path": input_fasta_dir_path,
                     "unknown_sequences_fasta_path": unknown_sequences_fasta_path,
-                    "num_epochs": num_epochs,
-                    "batch_size": batch_size,
                 },
                 f,
             )
@@ -157,14 +219,25 @@ def main():
         unknown_sequences_fasta_path=unknown_sequences_fasta_path,
         n_processes=n_processes,
         create_subclusters=create_subclusters,
+        mmseqs_n_processes=mmseqs_n_processes,
+        number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
+        fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
+        samples_profiles_product_limit=samples_profiles_product_limit,
+        mmseqs_cluster_coverage=mmseqs_cluster_coverage,
+        mmseqs_cluster_identity=mmseqs_cluster_identity,
+        mmseqs_coverage_subclusters=mmseqs_coverage_subclusters,
     )
-    if args.stop_before_training:
+    stop_before_training = args.stop_before_training or cfg["stop_before_training"]
+    if stop_before_training:
         logger.info("stop_before_training set to True. Stopping before training.")
         return
     sdfloader_path = os.path.join(data_dir_path, "sdfloader.pkl")
     checkpoints_dir_path = os.path.join(model_path, "checkpoints/")
     os.makedirs(checkpoints_dir_path, exist_ok=True)
     output_path = os.path.join(model_path, "state.pt")
+    log_to_wandb = args.log_to_wandb or cfg["log_to_wandb"]
+    wandb_project = args.wandb_project or cfg["wandb_project"]
+    wandb_api_key_path = args.wandb_api_key_path or cfg["wandb_api_key_path"]
     train(
         sdfloader_path=sdfloader_path,
         output_path=output_path,
@@ -177,6 +250,9 @@ def main():
         save_every=save_every,
         lr=0.001,
         n_processes=n_processes,
+        log_to_wandb=log_to_wandb,
+        wandb_project=wandb_project,
+        wandb_api_key_path=wandb_api_key_path,
     )
 
     if not os.path.exists(os.path.join(model_path, "env")):

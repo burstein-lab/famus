@@ -4,40 +4,31 @@ import os
 import yaml
 
 from famus import data_preprocessing as dp
-from famus import get_cfg, logger
+from famus.logging import logger
 from famus.sdfloader import prepare_sdfloader
 
 
 def main(
-    input_fasta_dir_path: str,
-    data_dir_path: str,
-    unknown_sequences_fasta_path: str | None = None,
-    n_processes: int = None,
-    create_subclusters: bool | None = None,
+    input_fasta_dir_path,
+    data_dir_path,
+    unknown_sequences_fasta_path,
+    n_processes,
+    create_subclusters,
+    mmseqs_n_processes,
+    number_of_sampled_sequences_per_subcluster,
+    fraction_of_sampled_unknown_sequences,
+    samples_profiles_product_limit,
+    mmseqs_cluster_coverage,
+    mmseqs_cluster_identity,
+    mmseqs_coverage_subclusters,
 ) -> None:
     logger.info("Starting preprocessing")
-    cfg = get_cfg()
-    if not n_processes:
-        n_processes = cfg["n_processes"]
 
     if not os.path.exists(input_fasta_dir_path):
         raise ValueError("Input fasta directory does not exist")
 
     state_file_path = os.path.join(data_dir_path, ".training_preprocessing_state")
-    number_of_sampled_sequences_per_subcluster = cfg[
-        "number_of_sampled_sequences_per_subcluster"
-    ]
-    mmseqs_cluster_coverage = cfg["mmseqs_cluster_coverage"]
-    mmseqs_cluster_identity = cfg["mmseqs_cluster_identity"]
-    fraction_of_sampled_unknown_sequences = cfg["fraction_of_sampled_unknown_sequences"]
-    samples_profiles_product_limit = cfg["samples_profiles_product_limit"]
-    create_subclusters = (
-        cfg["create_subclusters"] if create_subclusters is None else create_subclusters
-    )
-    mmseqs_cluster_coverage_subclusters = cfg["mmseqs_cluster_coverage_subclusters"]
-    max_fasta_n_sequences_times_longest_sequence = cfg[
-        "max_fasta_n_sequences_times_longest_sequence"
-    ]
+
     if not (
         isinstance(mmseqs_cluster_coverage, float) and 0 <= mmseqs_cluster_coverage <= 1
     ):
@@ -51,11 +42,11 @@ def main(
             f"mmseqs_cluster_identity must be a float between 0 and 1. got {mmseqs_cluster_identity}"
         )
     if not (
-        isinstance(mmseqs_cluster_coverage_subclusters, float)
-        and 0 <= mmseqs_cluster_coverage_subclusters <= 1
+        isinstance(mmseqs_coverage_subclusters, float)
+        and 0 <= mmseqs_coverage_subclusters <= 1
     ):
         raise ValueError(
-            f"mmseqs_cluster_coverage_subclusters must be a float between 0 and 1. got {mmseqs_cluster_coverage_subclusters}"
+            f"mmseqs_coverage_subclusters must be a float between 0 and 1. got {mmseqs_coverage_subclusters}"
         )
     if not (
         number_of_sampled_sequences_per_subcluster == "use_all"
@@ -105,11 +96,11 @@ def main(
             f"create_subclusters must be True or False. got {create_subclusters}"
         )
     if (
-        not isinstance(max_fasta_n_sequences_times_longest_sequence, int)
-        or max_fasta_n_sequences_times_longest_sequence < 1
+        not isinstance(samples_profiles_product_limit, int)
+        or samples_profiles_product_limit < 1
     ):
         raise ValueError(
-            f"max_fasta_n_sequences_times_longest_sequence must be a positive integer. got {max_fasta_n_sequences_times_longest_sequence}"
+            f"samples_profiles_product_limit must be a positive integer. got {samples_profiles_product_limit}"
         )
 
     if not data_dir_path.endswith("/"):
@@ -169,7 +160,9 @@ def main(
             create_subclusters=create_subclusters,
             mmseqs_cluster_coverage=mmseqs_cluster_coverage,
             mmseqs_cluster_identity=mmseqs_cluster_identity,
-            mmseqs_cluster_coverage_subclusters=mmseqs_cluster_coverage_subclusters,
+            mmseqs_coverage_subclusters=mmseqs_coverage_subclusters,
+            samples_profiles_product_limit=samples_profiles_product_limit,
+            mmseqs_n_processes=mmseqs_n_processes,
         )
         state["subcluster_dir"] = subcluster_dir
         state["rep_seq_dir"] = rep_seq_dir
@@ -388,43 +381,3 @@ def main(
         sdfloader_path = state["sdfloader"]
 
     logger.info("Finished preprocessing")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Preprocess data for training and train a model."
-    )
-    parser.add_argument(
-        "--input_fasta_dir_path",
-        type=str,
-        required=True,
-        help="""[REQUIRED] Path to directory containing input fasta files representing protein families.\n
-        Must only include fasta files.""",
-    )
-    parser.add_argument(
-        "--data_dir_path",
-        type=str,
-        required=True,
-        help="[REQUIRED] Path to directory where data will be stored. If directory does not exist, it will be created. If directory exists and was previously used for preprocessing that was stopped before finishing, the script will attempt to use the existing data to save time.",
-    )
-    parser.add_argument(
-        "--unknown_sequences_fasta_path",
-        type=str,
-        help="Path to fasta file containing sequences not belonging to any given protein family.",
-    )
-    parser.add_argument(
-        "--n_processes",
-        type=int,
-        help="Number of processes to use for parallel processing. If not specified, will use cfg.yaml parameter.",
-    )
-    args = parser.parse_args()
-    if args.n_processes:
-        n_processes = args.n_processes
-    else:
-        n_processes = None
-    main(
-        input_fasta_dir_path=args.input_fasta_dir_path,
-        data_dir_path=args.data_dir_path,
-        unknown_sequences_fasta_path=args.unknown_sequences_fasta_path,
-        n_processes=n_processes,
-    )

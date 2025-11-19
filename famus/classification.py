@@ -6,8 +6,7 @@ import numpy as np
 from sklearn.metrics import f1_score, pairwise_distances
 
 
-from famus import get_cfg, logger
-from famus import now as now_func
+from famus.logging import logger
 from famus.model import MLP
 from famus.sdf import SparseDataFrame, load
 from famus.utils import even_split
@@ -21,20 +20,14 @@ except ImportError:
         "PyTorch is not installed. Please install PyTorch to use the classification module."
     )
 
-cfg = get_cfg()
-user_device = cfg["user_device"]
-n_processes = cfg["n_processes"]
-threshold = cfg["threshold"]
-chunksize = cfg["chunksize"]  # reduce here or in cfg.yaml if GPU RAM becomes an issue
-
 
 def update_unknown_labels(
     sdf: SparseDataFrame,
     threshold: float,
     model: MLP,
-    device=user_device,
-    n_processes=n_processes,
-    chunksize=chunksize,
+    device,
+    n_processes,
+    chunksize,
     embeddings_path: str | None = None,
 ) -> SparseDataFrame:
     """
@@ -111,7 +104,7 @@ def _min_dist_ind(
     embeddings_a,
     embeddings_b,
     device,
-    n_processes=n_processes,
+    n_processes,
 ) -> Tuple[np.ndarray, np.ndarray]:
     if device == "cpu":
         a_b_distances = pairwise_distances(
@@ -126,9 +119,7 @@ def _min_dist_ind(
     return output
 
 
-def _calc_embeddings(
-    sdf, model: MLP, device: Any, chunksize=chunksize, n_processes=n_processes
-):
+def _calc_embeddings(sdf, model: MLP, device: Any, chunksize, n_processes):
     logger.info("Calculating embeddings from scratch")
     chunksize = min(chunksize, len(sdf))
     num_chunks = int(np.ceil(len(sdf) / chunksize))
@@ -155,10 +146,10 @@ def get_embeddings(
     sdf: SparseDataFrame,
     model: MLP,
     embeddings_path: str,
-    device=user_device,
-    chunksize=chunksize,
-    use_saved_embeddings=True,
-    n_processes=n_processes,
+    device,
+    chunksize,
+    use_saved_embeddings,
+    n_processes,
 ):
     if embeddings_path is None or embeddings_path == "":
         use_saved_embeddings = False
@@ -180,9 +171,9 @@ def calculate_threshold(
     sdf_train_path: str,
     model_path: str,
     train_embeddings_path: str,
-    device=user_device,
-    chunksize=chunksize,
-    n_processes=n_processes,
+    device,
+    chunksize,
+    n_processes,
 ) -> float:
     """
     Calculates a threshold for classification.
@@ -224,9 +215,9 @@ def calc_thresh(
     sdf_train,
     model,
     train_embeddings_path,
-    device=user_device,
-    chunksize=chunksize,
-    n_processes=n_processes,
+    device,
+    chunksize,
+    n_processes,
 ) -> None:
     """
     Generates a distance threshold for classification.
@@ -293,128 +284,6 @@ def calc_thresh(
     return avg_threshold
 
 
-def classify_2(
-    sdf_train_path: str,
-    sdf_classify_path: str,
-    model_path: str,
-    train_embeddings_path: None | str,
-    classification_embeddings_path: None | str,
-    output_path: str,
-    device=user_device,
-    chunksize=chunksize,
-    threshold=threshold,
-    n_processes=n_processes,
-    load_sdf_from_pickle=False,
-) -> None:
-    """
-    Classification using weighted voting from all neighbors within threshold.
-    Weight = threshold - distance + 1e-10 for each neighbor.
-    Label with highest total weight is assigned.
-    """
-    if os.path.exists(output_path):
-        logger.warning("Output file already exists. Overwriting.")
-    if device == "cuda":
-        if not torch.cuda.is_available():
-            raise torch.cuda.CudaError("CUDA is not available")
-        else:
-            device = torch.device("cuda")
-    elif device == "cpu":
-        device = torch.device("cpu")
-        torch.set_num_threads(n_processes)
-    else:
-        device = torch.device(device)
-
-    logger.info("device: " + str(device))
-    logger.info("Loading model")
-
-    snn_model: MLP = load_from_state(model_path, device=device)
-    snn_model.to(device)
-    snn_model.eval()
-    sdf_train: SparseDataFrame
-    sdf_classify: SparseDataFrame
-    logger.info("Loading dataframes")
-    sdf_train, sdf_classify = load_sparse_dataframes(
-        sdf_train_path, sdf_classify_path, load_sdf_from_pickle
-    )
-
-    if threshold == "bootstrap":
-        threshold = calc_thresh(
-            sdf_train=sdf_train,
-            model=snn_model,
-            train_embeddings_path=train_embeddings_path,
-            device=device,
-            chunksize=chunksize,
-            n_processes=n_processes,
-        )
-    else:
-        try:
-            threshold = float(threshold)
-        except ValueError:
-            raise ValueError(
-                "threshold must be either 'bootstrap' or a float, but was {}".format(
-                    threshold
-                )
-            )
-    logger.info("threshold: " + str(threshold))
-    logger.info("Getting embeddings")
-    train_embeddings = get_embeddings(
-        sdf_train, snn_model, train_embeddings_path, device, chunksize
-    )
-    classify_embeddings = get_embeddings(
-        sdf_classify, snn_model, classification_embeddings_path, device, chunksize
-    )
-
-    train_data_labels = sdf_train.labels
-    train_data_labels = [sdf_train.labels[k] for k in sdf_train.index_ids]
-    train_data_labels = [";".join(labels) for labels in train_data_labels]
-    train_data_labels = np.array(train_data_labels, dtype="object")
-
-    logger.info("Finding all neighbors within threshold")
-    neighbor_indices, neighbor_distances = (
-        get_nearest_neighbors_and_distances_optimized(
-            train_embeddings,
-            classify_embeddings,
-            threshold,
-            device,
-            n_processes,
-            chunksize,
-        )
-    )
-
-    logger.info("Performing weighted voting classification")
-    classifications = []
-
-    for i, (indices, distances) in enumerate(zip(neighbor_indices, neighbor_distances)):
-        if len(indices) == 0:
-            # No neighbors within threshold
-            classifications.append("unknown")
-        else:
-            # Calculate weights and perform voting
-            label_weights = {}
-
-            for neighbor_idx, distance in zip(indices, distances):
-                weight = ((threshold - distance) + 1e-10 / threshold + 1e-10) ** 10
-                neighbor_label_string = train_data_labels[neighbor_idx]
-
-                # Split multi-labels and add weight to each individual label
-                individual_labels = neighbor_label_string.split(";")
-                for label in individual_labels:
-                    label = label.strip()  # Remove any whitespace
-                    if label in label_weights:
-                        label_weights[label] += weight
-                    else:
-                        label_weights[label] = weight
-
-            # Find label with maximum weight
-            best_label = max(label_weights.keys(), key=lambda x: label_weights[x])
-            classifications.append(best_label)
-
-    logger.info("Saving predictions")
-    with open(output_path, "w+") as f:
-        for i, label in enumerate(classifications):
-            f.write(sdf_classify.index_ids[i] + "\t" + label + "\n")
-
-
 def classify(
     sdf_train_path: str,
     sdf_classify_path: str,
@@ -422,10 +291,10 @@ def classify(
     train_embeddings_path: None | str,
     classification_embeddings_path: None | str,
     output_path: str,
-    device=user_device,
-    chunksize=chunksize,
-    threshold=threshold,
-    n_processes=n_processes,
+    device,
+    chunksize,
+    threshold,
+    n_processes,
     load_sdf_from_pickle=False,
 ) -> None:
     if os.path.exists(output_path):
@@ -475,10 +344,22 @@ def classify(
     logger.info("threshold: " + str(threshold))
     logger.info("Getting embeddings")
     train_embeddings = get_embeddings(
-        sdf_train, snn_model, train_embeddings_path, device, chunksize
+        sdf=sdf_train,
+        model=snn_model,
+        embeddings_path=train_embeddings_path,
+        device=device,
+        chunksize=chunksize,
+        use_saved_embeddings=True,
+        n_processes=n_processes,
     )
     classifiy_embeddings = get_embeddings(
-        sdf_classify, snn_model, classification_embeddings_path, device, chunksize
+        sdf=sdf_classify,
+        model=snn_model,
+        embeddings_path=classification_embeddings_path,
+        device=device,
+        chunksize=chunksize,
+        use_saved_embeddings=False,
+        n_processes=n_processes,
     )
 
     train_data_labels = sdf_train.labels
@@ -500,7 +381,7 @@ def classify(
 
 
 def get_closest_distances_and_indices(
-    train_embeddings, classifiy_embeddings, device, n_processes, chunksize=chunksize
+    train_embeddings, classifiy_embeddings, device, n_processes, chunksize
 ):
     closest_distances = np.array([], dtype=float)
     closest_indices = np.array([], dtype=int)
@@ -554,7 +435,7 @@ def get_nearest_neighbors_and_distances(
     threshold,
     device,
     n_processes,
-    chunksize=chunksize,
+    chunksize,
 ):
     """
     For each query embedding, finds all target embeddings within the threshold distance.
@@ -644,7 +525,7 @@ def get_nearest_neighbors_and_distances_optimized(
     threshold,
     device,
     n_processes,
-    chunksize=chunksize,
+    chunksize,
 ):
     """
     Optimized version that processes the threshold filtering more efficiently.
