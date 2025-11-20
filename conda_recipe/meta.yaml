@@ -4,17 +4,16 @@ package:
 
 source:
   path: ..
-
 build:
   number: 0
-  noarch: python
+  skip: True
   script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
   entry_points:
     - famus-train = famus.cli.train:main
     - famus-classify = famus.cli.classify:main
     - famus-convert-sdf = famus.cli.convert_sdf:main
     - famus-install = famus.cli.install_models:main
-    - famus-defaults = famus.config:main
+    - famus-defaults = famus.cli.print_default_config:main
 
 requirements:
   host:

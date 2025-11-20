@@ -24,7 +24,9 @@ recursive-include conda_recipe/ *
 
 include examples/*
 
+
 # Exclude everything else
+
 global-exclude *.pyc
 global-exclude *.pyo
 global-exclude __pycache__
@@ -32,7 +34,7 @@ global-exclude *.so
 global-exclude *.dylib
 global-exclude .git*
 global-exclude *.bash
-
+global-exclude famus.ipynb
 # Explicitly exclude heavy directories
 prune famus/models
 prune famus/tmp
