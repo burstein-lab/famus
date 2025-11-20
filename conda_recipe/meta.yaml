@@ -4,10 +4,14 @@ package:
 
 source:
   path: ..
+  sha256: checksum-value
+
 build:
   number: 0
-  skip: True
+  skip: True # [win]
   script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  run_exports:
+    - {{ pin_subpackage("famus", max_pin="x.x") }}
   entry_points:
     - famus-train = famus.cli.train:main
     - famus-classify = famus.cli.classify:main
