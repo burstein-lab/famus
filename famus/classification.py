@@ -378,7 +378,7 @@ def classify(
     train_data_labels = np.array(train_data_labels, dtype="object")
 
     closest_distances, closest_indices = get_closest_distances_and_indices(
-        train_embeddings, classifiy_embeddings, device, n_processes
+        train_embeddings, classifiy_embeddings, device, n_processes, chunksize=chunksize
     )
 
     classifications = train_data_labels[closest_indices]
