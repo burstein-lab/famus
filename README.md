@@ -3,7 +3,7 @@
 FAMUS has a web interface available at https://famus-6e94e.web.app/.  
 
 <p align="center">
-<a href="https://www.youtube.com/watch?v=wOMwO5T3yT4&list=PLOtNYlNIGer0jmWpFtTWqMkfP56iuZg1w&index=2"><img src="https://famus-6e94e.web.app/superfamus.svg" width="96"></a></p>
+<a href="https://famus-6e94e.web.app/"><img src="https://famus-6e94e.web.app/superfamus.svg" width="96"></a></p>
 
 
 FAMUS is a Siamese Neural Network (SNN) based framework that annotates protein sequences with function. Input sequences are transformed to numeric vectors with pre-trained neural networks tailored to individual protein family databases, and then compared to sequences of those databases to find the closest match.
