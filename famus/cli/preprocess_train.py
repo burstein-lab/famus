@@ -151,7 +151,12 @@ def main(
         skip = False
         subcluster_dir = os.path.join(data_dir_path, "subclusters/")
         rep_seq_dir = os.path.join(data_dir_path, "representative_sequences/")
-        logger.info("Creating initial subclusters")
+        if create_subclusters:
+            logger.info(
+                "Deduplicating input sequences and creating initial subclusters"
+            )
+        else:
+            logger.info("Deduplicating input sequences")
         dp.orthologs_to_subclusters(
             ortholog_fasta_dir=input_fasta_dir_path,
             output_subcluster_dir=subcluster_dir,
@@ -169,14 +174,13 @@ def main(
         state["rep_seq_dir"] = rep_seq_dir
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing subclusters")
         subcluster_dir = state["subcluster_dir"]
         rep_seq_dir = state["rep_seq_dir"]
 
     # Augment subclusters
     if not state["augmented_subcluster_dir"] or not skip:
         skip = False
-        logger.info("Augmenting subclusters")
+        logger.info("Augmenting")
         augmented_subcluster_dir = os.path.join(data_dir_path, "augmented_subclusters/")
         dp.augment_small_subclusters(
             subclusters_dir=subcluster_dir,
@@ -188,7 +192,6 @@ def main(
         state["augmented_subcluster_dir"] = augmented_subcluster_dir
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing augmented subclusters")
         augmented_subcluster_dir = state["augmented_subcluster_dir"]
 
     # Create full profile database
@@ -205,7 +208,6 @@ def main(
         state["full_profile_dir"] = full_profile_dir
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing full profile directory")
         full_profile_dir = state["full_profile_dir"]
     if not state["full_input_fasta"] or not skip:
         skip = False
@@ -225,7 +227,6 @@ def main(
         state["full_input_fasta"] = full_hmmsearch_input
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing full input fasta")
         full_hmmsearch_input = state["full_input_fasta"]
 
     if not state["full_hmmsearch_results"] or not skip:
@@ -253,7 +254,6 @@ def main(
         yaml.dump(state, open(state_file_path, "w+"))
         skip = False
     else:
-        logger.info("Using existing full hmmsearch results")
         full_hmmsearch_results = state["full_hmmsearch_results"]
 
     if (
@@ -287,7 +287,6 @@ def main(
         state["split_subcluster_md"] = subcluster_split_md_path
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing split subclusters")
         subcluster_split_fastas_dir = state["subcluster_split_fastas_dir"]
         subcluster_split_scoring_dir = state["subcluster_split_scoring_dir"]
         subcluster_split_md_path = state["split_subcluster_md"]
@@ -307,7 +306,6 @@ def main(
         state["subcluster_split_profiles_dir"] = subcluster_split_profiles_dir
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing split subcluster profiles")
         subcluster_split_profiles_dir = state["subcluster_split_profiles_dir"]
 
     if not state["split_hmmsearch_results"] or not skip:
@@ -328,7 +326,6 @@ def main(
         state["split_hmmsearch_results"] = split_hmmsearch_results_path
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing split hmmsearch results")
         split_hmmsearch_results_path = state["split_hmmsearch_results"]
 
     if not state["ground_truth"] or not skip:
@@ -344,7 +341,6 @@ def main(
         yaml.dump(state, open(state_file_path, "w+"))
     else:
         ground_truth_path = state["ground_truth"]
-        logger.info("Using existing ground truth")
 
     if not state["sdf_train"] or not skip:
         logger.info("Creating sparse dataframe for training")
@@ -363,7 +359,6 @@ def main(
         state["sdf_train"] = sdf_train_path
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing sparse dataframe for training")
         sdf_train_path = state["sdf_train"]
 
     if not state["sdfloader"] or not skip:
@@ -380,7 +375,6 @@ def main(
         state["sdfloader"] = sdfloader_path
         yaml.dump(state, open(state_file_path, "w+"))
     else:
-        logger.info("Using existing sdfloader")
         sdfloader_path = state["sdfloader"]
 
     logger.info("Finished preprocessing")
