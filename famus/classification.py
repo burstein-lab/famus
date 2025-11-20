@@ -251,7 +251,11 @@ def calc_thresh(
         test_indices = split_indices[fold]
         curr_test_embeddings = train_embeddings[test_indices]
         closest_distances, closest_indices = get_closest_distances_and_indices(
-            curr_train_embeddings, curr_test_embeddings, device, n_processes
+            curr_train_embeddings,
+            curr_test_embeddings,
+            device,
+            n_processes,
+            chunksize=chunksize,
         )
 
         y_pred = [train_labels[k] for k in closest_indices]
