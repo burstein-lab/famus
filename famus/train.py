@@ -165,7 +165,7 @@ def _train_model(
             if eval_round:
                 msg += " (eval round)"
 
-            logger.info(msg)
+            logger.debug(msg)
             batch_num += 1
             steps_taken += 1
     return model

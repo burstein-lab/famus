@@ -277,11 +277,11 @@ def calc_thresh(
         best_thresh = 0
         for i in range(50, 1, -1):
             thresh = i / 100
-            logger.info("Current threshold: " + str(thresh))
+            logger.debug("Current threshold: " + str(thresh))
             y_pred[closest_distances >= thresh] = "unknown"
 
             weighted_f1 = f1_score(y_true, y_pred, average="weighted", zero_division=0)
-            logger.info("weighted fscore: " + str(weighted_f1))
+            logger.debug("weighted fscore: " + str(weighted_f1))
             if weighted_f1 > max_f:
                 max_f = weighted_f1
                 best_thresh = thresh
@@ -289,7 +289,7 @@ def calc_thresh(
         max_thresholds.append(best_thresh)
     avg_max_f1_score = np.mean(max_f1_scores)
     avg_threshold = np.mean(max_thresholds)
-    logger.info("average labelled/unknown fscore: " + str(avg_max_f1_score))
+    logger.debug("average labelled/unknown fscore: " + str(avg_max_f1_score))
     logger.info("selected threshold: " + str(avg_threshold))
     return avg_threshold
 
