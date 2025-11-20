@@ -29,11 +29,15 @@ Using famus tools requires that the conda environment is activated. You can chec
 
 ### From source
 
-Alternatively, you can download the famus source code. First, clone the repository:
+Alternatively, you can download the famus source code note that FAMUS currently only supports Python>=3.11. First, clone the repository:
 
 `git clone https://github.com/burstein-lab/famus.git`
 
-Without conda, FAMUS has five dependencies (other than python and pip) that need to be installed separately:
+
+Create and activate a new conda or pip virtual environment, then install the required python packages with:
+`pip install -r requirements.txt`
+
+FAMUS has five dependencies (other than python and pip) that need to be installed separately:
 
 - PyTorch - follow the instructions at https://pytorch.org/get-started/locally/
 - mmseqs2
@@ -41,11 +45,8 @@ Without conda, FAMUS has five dependencies (other than python and pip) that need
 - hmmer
 - mafft
 
-Make sure that the executables for `mmseqs2`, `seqkit`, `hmmsearch` from hmmer, and `mafft` are all in your PATH variable.
-
-Create and activate a new conda or pip virtual environment, then install the required python packages with:
-`pip install -r requirements.txt`
-
+Make sure that the executables for `mmseqs2`, `seqkit`, `hmmsearch` from hmmer, and `mafft` are all in your PATH variable. They can also be installed via conda:
+`conda install -c conda-forge -c bioconda hmmer mafft seqkit mmseqs2`
 
 ### Downloading pre-trained models
 
@@ -71,10 +72,13 @@ Some python data is downloaded as JSON for security reasons. After running this 
 
 ## Configuration and priority of parameters
 
-Most FAMUS tools expect parameters as either command line arguments or in a given (optional) configuration file. An example for a configuration file can be found in `example_cfg.yaml` of this repository's root directory. The order of priority is as follows:
+Most FAMUS tools expect parameters as either command line arguments or in a given (optional) YAML-formatted configuration file. An example configuration file - `example_cfg.yaml` - can be found in the root directory of this repository and contains an example for each parameter it can override. Config files don't have to include all parameters, just the ones you want to override. Any parameter not specified will use a default value. For example, the default path to save/load models is ~/.famus/models/, and should be overridden if you want to use a different path. The order of priority is as follows:
+
 1. Command line arguments
 2. Configuration file parameters (if provided as a command line argument and the relevant parameter is specified there)
 3. Default parameters (running `famus-defaults` (conda) or `python -m famus.config` (source code) will print the default parameters to the console)
+
+See sections below for details on command line arguments for each tool, and the end of this README for a comprehensive list of configuration parameters.
 
 ## Classifying sequences
 
@@ -116,8 +120,8 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - input_fasta_dir_path - the path of the directory holding fasta files where each file defines a protein family (required).
 - --config - path to configuration file.
 - --create-subclusters / --no-create-subclusters - whether to create a comprehensive (True) or light (False) model. Comprehensive models cluster protein families into sub-families, which increases accuracy but also training and classification time.
-- --model-name - optional name for the model. If not specified, the input directory base name will be used.
-- --unknown-sequences-fasta-path - fasta file with sequences of unknown function as negative examples for the model. Optional but recommended.
+- --model-name - optional name for the model. If not specified, the input directory base name will be used. Can't be set using the config file and must be provided as a command line argument.
+- --unknown-sequences-fasta-path - fasta file with sequences of unknown function as negative examples for the model. Optional but recommended. Can't be set using the config file and must be provided as a command line argument.
 - --n-processes - number of CPU cores to use.
 - --num-epochs - number of epochs to train the model for.
 - --batch-size - training batch size.

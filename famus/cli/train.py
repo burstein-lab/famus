@@ -167,7 +167,10 @@ Example usage:
 
     model_name = args.model_name
     unknown_sequences_fasta_path = args.unknown_sequences_fasta_path
-    create_subclusters = args.create_subclusters or cfg["create_subclusters"]
+    if args.create_subclusters is None:
+        create_subclusters = cfg["create_subclusters"]
+    else:
+        create_subclusters = args.create_subclusters
     if not isinstance(create_subclusters, bool):
         raise ValueError("create_subclusters must be True or False.")
     if device not in ["cpu", "cuda"]:
