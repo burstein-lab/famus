@@ -265,7 +265,7 @@ def main(
         or not skip
     ):
         skip = False
-        logger.info("Splitting subclusters")
+        logger.info("Splitting clusters")
         subcluster_split_fastas_dir = os.path.join(
             data_dir_path, "subcluster_split_fastas/"
         )
@@ -293,7 +293,7 @@ def main(
 
     if not state["subcluster_split_profiles_dir"] or not skip:
         skip = False
-        logger.info("Creating split subcluster profiles")
+        logger.info("Creating split cluster profiles")
         subcluster_split_profiles_dir = os.path.join(
             data_dir_path, "subcluster_split_profiles/"
         )

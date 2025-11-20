@@ -226,7 +226,13 @@ def calc_thresh(
 
     logger.info("Getting embeddings")
     train_embeddings = get_embeddings(
-        sdf_train, model, train_embeddings_path, device, chunksize
+        sdf_train,
+        model,
+        train_embeddings_path,
+        device,
+        chunksize,
+        use_saved_embeddings=True,
+        n_processes=n_processes,
     )
     indices = np.arange(len(train_embeddings))
     np.random.shuffle(indices)
