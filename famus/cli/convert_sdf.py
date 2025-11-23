@@ -1,6 +1,7 @@
 from famus.sdf import load
 import pickle
 import os
+from pathlib import Path
 import sys
 import argparse
 from famus import config
@@ -30,22 +31,22 @@ Example usage:
     args = parser.parse_args()
     config_path = args.config
     cfg = config.load_cfg(config_path) if config_path else config.get_default_config()
-    models_dir = args.models_dir or cfg["models_dir"]
+    models_dir = Path(args.models_dir or cfg["models_dir"])
 
     for model_type in ["comprehensive", "light"]:
-        model_type_root_path = os.path.join(models_dir, model_type)
+        model_type_root_path = models_dir / model_type
         for model in os.listdir(model_type_root_path):
             print(f"Checking {model_type} {model}")
-            model_path = os.path.join(model_type_root_path, model)
-            data_dir_path = os.path.join(model_path, "data_dir")
-            sdf_json_path = os.path.join(data_dir_path, "sdf_train.json")
-            if not os.path.exists(sdf_json_path):
+            model_path = model_type_root_path / model
+            data_dir_path = model_path / "data_dir"
+            sdf_json_path = data_dir_path / "sdf_train.json"
+            if not sdf_json_path.exists():
                 print(
                     f"{sdf_json_path} does not exist - has the model finished preprocessing?"
                 )
                 continue
-            sdf_pkl_path = os.path.join(data_dir_path, "sdf_train.pkl")
-            if not os.path.exists(sdf_pkl_path):
+            sdf_pkl_path = data_dir_path / "sdf_train.pkl"
+            if not sdf_pkl_path.exists():
                 print(f"Converting {sdf_json_path} to {sdf_pkl_path}")
                 sdf = load(sdf_json_path)
                 with open(sdf_pkl_path, "wb") as f:
