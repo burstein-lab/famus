@@ -124,7 +124,7 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - --n-processes - number of CPU cores to use.
 - --num-epochs - number of epochs to train the model for.
 - --batch-size - training batch size.
-- --stop-before-training - calling easy_train with --stop_before_training will exit before starting to train the model (useful for things like preprocessing in a high-CPU environment and them training the model in a different environment with CUDA).
+- --stop-before-training - calling this module with --stop-before-training will exit before starting to train the model (useful for things like preprocessing in a high-CPU environment and them training the model in a different environment with CUDA).
 - --device - cpu/cuda.
 - --chunksize - reduce if GPU RAM becomes an issue when calculating threshold using GPU.
 - --save-every - save a checkpoint of the model's state every \<save_every> steps. Will load the last checkpoint automatically if the script is restarted.
