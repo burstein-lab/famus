@@ -17,7 +17,7 @@ def get_common_model_args_parser():
     parser.add_argument(
         "--device",
         type=str,
-        help=f"Device to use (cpu or cuda). [{config.DEFAULT_USER_DEVICE}]",
+        help=f"Device to use (cpu or cuda). [{config.DEFAULT_DEVICE}]",
     )
     parser.add_argument(
         "--chunksize",

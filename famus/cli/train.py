@@ -259,9 +259,17 @@ Example usage:
     checkpoints_dir_path = os.path.join(model_path, "checkpoints/")
     os.makedirs(checkpoints_dir_path, exist_ok=True)
     output_path = os.path.join(model_path, "state.pt")
-    log_to_wandb = args.log_to_wandb or cfg["log_to_wandb"]
-    wandb_project = args.wandb_project or cfg["wandb_project"]
-    wandb_api_key_path = args.wandb_api_key_path or cfg["wandb_api_key_path"]
+    log_to_wandb = (
+        args.log_to_wandb if args.log_to_wandb is not None else cfg["log_to_wandb"]
+    )
+    wandb_project = (
+        args.wandb_project if args.wandb_project is not None else cfg["wandb_project"]
+    )
+    wandb_api_key_path = (
+        args.wandb_api_key_path
+        if args.wandb_api_key_path is not None
+        else cfg["wandb_api_key_path"]
+    )
     train(
         sdfloader_path=sdfloader_path,
         output_path=output_path,
