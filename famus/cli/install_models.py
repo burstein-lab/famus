@@ -257,7 +257,7 @@ Full description of arguments can be found at https://github.com/burstein-lab/fa
     args = parser.parse_args()
     cfg_path = args.config
     cfg = config.load_cfg(cfg_path) if cfg_path else config.get_default_config()
-    no_log = args.no_log or cfg["no_log"]
+    no_log = args.no_log if args.no_log is not None else cfg["no_log"]
     log_dir = args.log_dir or cfg["log_dir"]
     models_dir = Path(args.models_dir or cfg["models_dir"])
     logger = setup_logger(enable_logging=not no_log, log_dir=log_dir)
