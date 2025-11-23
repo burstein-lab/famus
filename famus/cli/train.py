@@ -141,9 +141,8 @@ Example usage:
     save_every = args.save_every or cfg["save_every"]
     models_dir = args.models_dir or cfg["models_dir"]
     mmseqs_n_processes = args.mmseqs_n_processes or cfg["mmseqs_n_processes"]
-    number_of_sampled_sequences_per_subcluster = (
-        args.sampled_sequences_per_subcluster
-        or cfg["number_of_sampled_sequences_per_subcluster"]
+    sampled_sequences_per_subcluster = (
+        args.sampled_sequences_per_subcluster or cfg["sampled_sequences_per_subcluster"]
     )
     fraction_of_sampled_unknown_sequences = (
         args.fraction_of_sampled_unknown_sequences
@@ -244,7 +243,7 @@ Example usage:
         n_processes=n_processes,
         create_subclusters=create_subclusters,
         mmseqs_n_processes=mmseqs_n_processes,
-        number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
+        sampled_sequences_per_subcluster=sampled_sequences_per_subcluster,
         fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
         samples_profiles_product_limit=samples_profiles_product_limit,
         sequences_max_len_product_limit=sequences_max_len_product_limit,

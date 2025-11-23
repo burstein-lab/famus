@@ -15,7 +15,7 @@ def main(
     n_processes,
     create_subclusters,
     mmseqs_n_processes,
-    number_of_sampled_sequences_per_subcluster,
+    sampled_sequences_per_subcluster,
     fraction_of_sampled_unknown_sequences,
     samples_profiles_product_limit,
     sequences_max_len_product_limit,
@@ -50,14 +50,14 @@ def main(
             f"mmseqs_coverage_subclusters must be a float between 0 and 1. got {mmseqs_coverage_subclusters}"
         )
     if not (
-        number_of_sampled_sequences_per_subcluster == "use_all"
+        sampled_sequences_per_subcluster == "use_all"
         or (
-            isinstance(number_of_sampled_sequences_per_subcluster, int)
-            and number_of_sampled_sequences_per_subcluster > 0
+            isinstance(sampled_sequences_per_subcluster, int)
+            and sampled_sequences_per_subcluster > 0
         )
     ):
         raise ValueError(
-            f"number_of_sampled_sequences_per_subcluster must be 'use_all' or a positive integer. got {number_of_sampled_sequences_per_subcluster}"
+            f"sampled_sequences_per_subcluster must be 'use_all' or a positive integer. got {sampled_sequences_per_subcluster}"
         )
 
     if not (
@@ -219,7 +219,7 @@ def main(
             tmp_dir_path=tmp_dir_path,
             input_unknown_sequences_fasta_path=unknown_sequences_fasta_path,
             output_full_hmmsearch_input_path=full_hmmsearch_input,
-            number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
+            sampled_sequences_per_subcluster=sampled_sequences_per_subcluster,
             fraction_of_sampled_unknown_sequences=fraction_of_sampled_unknown_sequences,
             samples_profiles_product_limit=samples_profiles_product_limit,
         )

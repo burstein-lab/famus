@@ -137,13 +137,13 @@ def prepare_full_hmmsearch_input(
     tmp_dir_path: str,
     input_unknown_sequences_fasta_path: str,
     output_full_hmmsearch_input_path: str,
-    number_of_sampled_sequences_per_subcluster,
+    sampled_sequences_per_subcluster,
     fraction_of_sampled_unknown_sequences,
     samples_profiles_product_limit,
 ):
     """
     Creates a single fasta file containing sequences from subclusters and unknown sequences for hmmsearch.
-    Will try to sample number_of_sampled_sequences_per_subcluster sequences from each subcluster.
+    Will try to sample sampled_sequences_per_subcluster sequences from each subcluster.
     If the product of the number of sampled sequences and the number of profiles is greater than samples_profiles_product_limit, the number of sampled sequences will be adjusted.
     """
     labeled_ids_per_cluster = []
@@ -161,22 +161,22 @@ def prepare_full_hmmsearch_input(
             )
 
     # calculate the total number of sequences that will be sampled
-    if number_of_sampled_sequences_per_subcluster == "use_all":
+    if sampled_sequences_per_subcluster == "use_all":
         total_sampled_sequences = sum([len(ids) for ids in labeled_ids_per_cluster])
 
     elif (
-        isinstance(number_of_sampled_sequences_per_subcluster, int)
-        and number_of_sampled_sequences_per_subcluster > 0
+        isinstance(sampled_sequences_per_subcluster, int)
+        and sampled_sequences_per_subcluster > 0
     ):
         total_sampled_sequences = sum(
             [
-                min(len(ids), number_of_sampled_sequences_per_subcluster)
+                min(len(ids), sampled_sequences_per_subcluster)
                 for ids in labeled_ids_per_cluster
             ]
         )
     else:
         raise ValueError(
-            "number_of_sampled_sequences_per_subcluster must be 'use_all' or a positive integer"
+            "sampled_sequences_per_subcluster must be 'use_all' or a positive integer"
         )
 
     if isinstance(fraction_of_sampled_unknown_sequences, float):
@@ -199,25 +199,25 @@ def prepare_full_hmmsearch_input(
             [len(ids) for ids in labeled_ids_per_cluster]
         )
 
-        number_of_sampled_sequences_per_subcluster = int(
+        sampled_sequences_per_subcluster = int(
             total_number_of_subcluster_seqs // number_of_profiles
         )
-        if number_of_sampled_sequences_per_subcluster < 6:
-            number_of_sampled_sequences_per_subcluster = 6
+        if sampled_sequences_per_subcluster < 6:
+            sampled_sequences_per_subcluster = 6
 
         logger.info(
-            f"number of sampled sequences per subcluster: {number_of_sampled_sequences_per_subcluster}"
+            f"number of sampled sequences per subcluster: {sampled_sequences_per_subcluster}"
         )
 
     sampled_subclusters_fasta_path = os.path.join(
         data_dir_path, "sampled_subclusters.fasta"
     )
-    if isinstance(number_of_sampled_sequences_per_subcluster, int):
+    if isinstance(sampled_sequences_per_subcluster, int):
         logger.info("sampling subclusters for model")
         sample_subclusters_for_model(
             augmented_subcluster_dir,
             output_sampled_subclusters_fasta_path=sampled_subclusters_fasta_path,
-            number_of_sampled_sequences_per_subcluster=number_of_sampled_sequences_per_subcluster,
+            sampled_sequences_per_subcluster=sampled_sequences_per_subcluster,
         )
     else:
         logger.info("using all subclusters for model")
@@ -446,7 +446,7 @@ def hmmsearch_results_to_classification_sdf(
 def sample_subclusters_for_model(
     input_subcluster_fastas_dir_path: str,
     output_sampled_subclusters_fasta_path: str,
-    number_of_sampled_sequences_per_subcluster: int,
+    sampled_sequences_per_subcluster: int,
 ) -> None:
     """
     Samples sequences from subclusters and saves them to a single fasta file.
@@ -454,15 +454,13 @@ def sample_subclusters_for_model(
     fasta_paths = get_subcluster_fasta_paths(input_subcluster_fastas_dir_path)
     logger.info(f"found {len(fasta_paths)} subclusters")
     logger.info(
-        f"sampling up to {number_of_sampled_sequences_per_subcluster} sequences from each subcluster"
+        f"sampling up to {sampled_sequences_per_subcluster} sequences from each subcluster"
     )
     sampled_records = []
     for fasta_path in tqdm(fasta_paths, desc="sampling subclusters"):
         with open(fasta_path, "r") as f:
             curr_records = [record for record in SeqIO.parse(f, "fasta")]
-        n_seqs_to_sample = min(
-            number_of_sampled_sequences_per_subcluster, len(curr_records)
-        )
+        n_seqs_to_sample = min(sampled_sequences_per_subcluster, len(curr_records))
         sampled_records.extend(random.sample(curr_records, n_seqs_to_sample))
     logger.info(f"sampled {len(sampled_records)} sequences from subclusters")
     with open(output_sampled_subclusters_fasta_path, "w") as f:
