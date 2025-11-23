@@ -143,13 +143,13 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - --model-type: 'comprehensive' or 'light' - type of model to use for classification (light may be slightly less accurate but significantly faster).
 - --models: a space-separated list of protein family databases to use for training or classification. The available pretrained are: kegg, interpro, orthodb, eggnog for both comprehensive and light models. Classification will use all models specified here for the specified model type.
 - --chunksize: positive integer - the number of sequences to process (load to GPU) in each batch during classification - decrease if running out of GPU RAM.
-- --batch-size: positive integer - the batch size to use for training.
-- --num-epochs: positive integer - the number of epochs to train for.
 - --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Makes classification preprocessing slightly faster. Only usable after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users. Recommended if using models repeatedly.  
-- --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Only usable after running `python -m convert_sdf`.  
+ 
 
 ### Training-specific parameters:
 
+- --batch-size: positive integer - the batch size to use for training.
+- --num-epochs: positive integer - the number of epochs to train for.
 - --create-sublucsters/--no-create-subclusters: whether to create a comprehensive or light model. Comprehensive models cluster protein families into sub-families, which increases accuracy but also training and classification time.
 - --processes-per-mmseqs-job: positive integer - the number of processes to use for each mmseqs job during preprocessing. Higher values will work faster for fewer but bigger protein families, lower values will work faster for many small protein families.
 - --sampled-sequences-per-subcluster: 'use_all' or positive integer - the number of sequences to sample from each subcluster during preprocessing. If 'use_all', all sequences will be used. These sequences will be used to train the model and as positive examples during classification. decrease this value to reduce preprocessing time and space usage, increase to improve training data variety.
