@@ -137,7 +137,6 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - --no-log: do not create a log file.
 - --log-dir: directory to save the log file to.
 - --models-dir: directory where the models are installed.
-- --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Only usable after running `python -m convert_sdf`.  
 
 ### Classification-specific parameters:
 
@@ -147,6 +146,7 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - --batch-size: positive integer - the batch size to use for training.
 - --num-epochs: positive integer - the number of epochs to train for.
 - --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Makes classification preprocessing slightly faster. Only usable after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users. Recommended if using models repeatedly.  
+- --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Only usable after running `python -m convert_sdf`.  
 
 ### Training-specific parameters:
 
