@@ -144,10 +144,20 @@ Example usage:
     sampled_sequences_per_subcluster = (
         args.sampled_sequences_per_subcluster or cfg["sampled_sequences_per_subcluster"]
     )
+    try:
+        sampled_sequences_per_subcluster = int(sampled_sequences_per_subcluster)
+    except ValueError:
+        pass
     fraction_of_sampled_unknown_sequences = (
         args.fraction_of_sampled_unknown_sequences
         or cfg["fraction_of_sampled_unknown_sequences"]
     )
+    try:
+        fraction_of_sampled_unknown_sequences = float(
+            fraction_of_sampled_unknown_sequences
+        )
+    except ValueError:
+        pass
     samples_profiles_product_limit = (
         args.samples_profiles_product_limit or cfg["samples_profiles_product_limit"]
     )

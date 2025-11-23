@@ -2,7 +2,7 @@
 # See README.md for more information about each parameter
 
 n_processes: 32 # positive integer
-user_device: 'cuda' # 'cpu' or 'cuda'
+device: 'cuda' # 'cpu' or 'cuda'
 no_log: False # True or False
 
 # the following parameters are only relevant for classification

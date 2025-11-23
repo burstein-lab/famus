@@ -17,7 +17,7 @@ DEFAULT_NUM_EPOCHS = 10
 DEFAULT_BATCH_SIZE = 32
 DEFAULT_CHUNKSIZE = 20_000
 DEFAULT_SAVE_EVERY_BATCHES = 100_000
-DEFAULT_USER_DEVICE = "cuda"
+DEFAULT_DEVICE = "cuda"
 DEFAULT_MODEL_TYPE = "comprehensive"
 DEFAULT_CREATE_SUBCLUSTERS = True
 DEFAULT_MMSEQS_N_PROCESSES = 4
@@ -64,7 +64,7 @@ def get_default_config():
         "batch_size": DEFAULT_BATCH_SIZE,
         "save_every": DEFAULT_SAVE_EVERY_BATCHES,
         "chunksize": DEFAULT_CHUNKSIZE,
-        "device": DEFAULT_USER_DEVICE,
+        "device": DEFAULT_DEVICE,
         "model_type": DEFAULT_MODEL_TYPE,
         "create_subclusters": DEFAULT_CREATE_SUBCLUSTERS,
         "mmseqs_n_processes": DEFAULT_MMSEQS_N_PROCESSES,
