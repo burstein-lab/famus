@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 from famus.logging import setup_logger, logger
 from .common import get_common_parser
-from .common_model_args import get_common_model_args_parser
 from famus import config
 
 ZENODO_BASE = "https://zenodo.org/records/14941374/files"
@@ -202,7 +201,7 @@ def main():
     if prog.endswith(".py"):
         prog = "python -m famus.cli.install_models"
     parser = argparse.ArgumentParser(
-        parents=[get_common_parser(), get_common_model_args_parser()],
+        parents=[get_common_parser()],
         description="Download and install FAMUS pre-trained models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         prog=prog,
