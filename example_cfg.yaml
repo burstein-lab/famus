@@ -7,7 +7,7 @@ no_log: False # True or False
 
 # the following parameters are only relevant for classification
 
-models_type: "comprehensive" # 'light' or 'comprehensive'
+model_type: "comprehensive" # 'light' or 'comprehensive'
 models: # models to use for classification
 - kegg
 - interpro
