@@ -103,7 +103,7 @@ Main command line arguments for `famus-classify` (unused arguments will be read 
 - --device - cpu/cuda
 - --models - space-separated list of model names to use. 
 - --models-dir - directory where the models are installed.
-- --models-type - comprehensive/light - type of model to use (light may be slightly less accurate but significantly faster).
+- --model-type - comprehensive/light - type of model to use (light may be slightly less accurate but significantly faster).
 - --load-sdf-from-pickle - loads training data from pickle instead of json. Only usable on downloaded / trained models after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users.
 - --no-log - do not create a log file.
 - --log-dir - directory to save the log file to.
@@ -148,7 +148,7 @@ Training and classification parameters:
 
 Classification-specific parameters:
 
-- --models-type: 'comprehensive' or 'light' - type of model to use for classification (light may be slightly less accurate but significantly faster).
+- --model-type: 'comprehensive' or 'light' - type of model to use for classification (light may be slightly less accurate but significantly faster).
 - --models: a space-separated list of protein family databases to use for training or classification. The available pretrained are: kegg, interpro, orthodb, eggnog for both comprehensive and light models. Classification will use all models specified here for the specified model type.
 - --chunksize: positive integer - the number of sequences to process (load to GPU) in each batch during classification - decrease if running out of GPU RAM.
 - --batch-size: positive integer - the batch size to use for training.
