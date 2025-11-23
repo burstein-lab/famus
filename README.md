@@ -22,12 +22,9 @@ Currently FAMUS only supports linux and macOS operating systems.
 
 To install with conda, first create a new conda environment:
 
-`conda create -n famus`
+`!conda create -n famus -c guyshur -c bioconda -c conda-forge famus`
 
 Activate the environment with `conda activate famus` and install the correct pytorch version for your environment from the pytorch website via pip: https://pytorch.org/get-started/locally/
-
-Finally, install famus with
-`conda install -c bioconda guyshur::famus`
 
 Using famus tools requires that the conda environment is activated. You can check if the installation was successful by running `famus-train -h`.
 

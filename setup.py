@@ -9,7 +9,7 @@ setup(
         "pandas>=2.2.3",
         "scikit-learn>=1.3.0",
         "scipy>=1.10.0",
-        "biopython>=1.78",
+        "biopython>=1.76",
         "tqdm>=4.66.2",
         "matplotlib>=3.7.0",
         "seaborn>=0.13.2",
@@ -36,12 +36,10 @@ setup(
     url="https://github.com/burstein-lab/famus",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
         "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX :: Linux",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
     ],
-    python_requires=">=3.11",
+    python_requires=">=3.11,<3.13",
 )
