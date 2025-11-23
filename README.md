@@ -145,7 +145,6 @@ Training and classification parameters:
 - --log-dir: directory to save the log file to.
 - --models-dir: directory where the models are installed.
 - --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Only usable after running `python -m convert_sdf`.
-
 Classification-specific parameters:
 
 - --model-type: 'comprehensive' or 'light' - type of model to use for classification (light may be slightly less accurate but significantly faster).
@@ -153,7 +152,7 @@ Classification-specific parameters:
 - --chunksize: positive integer - the number of sequences to process (load to GPU) in each batch during classification - decrease if running out of GPU RAM.
 - --batch-size: positive integer - the batch size to use for training.
 - --num-epochs: positive integer - the number of epochs to train for.
-
+- --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Makes classification preprocessing slightly faster. Only usable after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users. Recommended if using models repeatedly.
 Training-specific parameters:
 - --create-sublucsters/--no-create-subclusters: whether to create a comprehensive or light model. Comprehensive models cluster protein families into sub-families, which increases accuracy but also training and classification time.
 - --processes-per-mmseqs-job: positive integer - the number of processes to use for each mmseqs job during preprocessing. Higher values will work faster for fewer but bigger protein families, lower values will work faster for many small protein families.
@@ -163,6 +162,11 @@ Training-specific parameters:
 - --mmseqs-cluster-coverage: float between 0 and 1 - mmseqs clustering coverage parameter during deduplication of protein families. Higher values will de-duplicate less aggressively.
 - --mmseqs-cluster-identity: float between 0 and 1 - mmseqs clustering identity parameter during deduplication of protein families. Higher values will de-duplicate less aggressively.
 - --mmseqs-coverage-subclusters: float between 0 and 1 - mmseqs coverage parameter during creation of subclusters within protein families. Higher values will create more and smaller subclusters.
+- --stop-before-training: if set to True, will exit before starting to train the model (useful for things like preprocessing in a high-CPU environment and them training the model in a different environment with CUDA).
+- --save-every: positive integer - save a checkpoint of the model's state every \<save_every> steps. Will load the last checkpoint automatically if the script is restarted.
+- --log-to-wandb: whether to log training metrics to Weights & Biases.
+- --wandb-project-name: name of the Weights & Biases project to log to if --log-to-wandb is set.
+- --wandb-api-key-path: path to a text file containing the Weights & Biases API key if --log-to-wandb is set.
 
 
 
