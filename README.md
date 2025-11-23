@@ -12,10 +12,6 @@ This repository (or the famus conda package) can also be used to train a model f
 
 We provide one main module for training and one for classification, which automatically take care of all relevant steps of training and/or inference. If interrupted, using these modules again with the same parameters will attempt to resume from where the program has stopped. For this reason do not rename/remove files from the directories the modules are using if you intend to restart an interrupted pipeline using the same data directory, as the names of some files are hardcoded into the program.
 
-Check out famus.ipynb for a more detailed explanation of the modules and their usage.
-
-Currently FAMUS only supports linux and macOS operating systems.
-
 ## Installation
 
 ### With Conda
