@@ -1,5 +1,5 @@
 {% set name = "famus" %}
-{% set version = "0.1.0" %}
+{% set version = "0.1.1" %}
 
 package:
   name: {{ name|lower }}
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/burstein-lab/{{ name }}/archive/refs/tags/v{{ version }}.tar.gz
-  sha256: 36c31377d75c049b25eb10d8114021afea6da482f952538792e6380274813247
+  sha256: 508af824b411ffef527b9db5e35020d4e1f72505bf06a3d0f9b91b7b6f31ec0f
 
 build:
   number: 0
