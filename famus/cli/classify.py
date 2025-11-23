@@ -81,7 +81,7 @@ Example usage:
         raise FileNotFoundError(f"Missing models: {missing_models}")
 
     if args.load_sdf_from_pickle is None:
-        args.load_sdf_from_pickle = cfg["load_sdf_from_pickle"]
+        load_sdf_from_pickle = cfg["load_sdf_from_pickle"]
     else:
         load_sdf_from_pickle = args.load_sdf_from_pickle
     if load_sdf_from_pickle:
@@ -105,7 +105,7 @@ Example usage:
             continue
         logger.info(f"Preprocessing data for {model}")
         model_path = os.path.join(models_dir, models_type, model)
-        if args.load_sdf_from_pickle:
+        if load_sdf_from_pickle:
             sdf_train_path = os.path.join(model_path, "data_dir", "sdf_train.pkl")
         else:
             sdf_train_path = os.path.join(model_path, "data_dir", "sdf_train.json")
