@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/burstein-lab/{{ name }}/archive/refs/tags/v{{ version }}.tar.gz
-  sha256: 508af824b411ffef527b9db5e35020d4e1f72505bf06a3d0f9b91b7b6f31ec0f
+  sha256: 663ad35f7e69e5c8d6f32cf216f7ee6dbacfbfee102049eeace1abe4edea39b8
 
 build:
   number: 0
