@@ -56,7 +56,7 @@ Example usage:
     parser.add_argument(
         "--load-sdf-from-pickle",
         action=argparse.BooleanOptionalAction,
-        help="Load sdf_train from pickle instead of json for classification preprocessing.",
+        help=f"Load sdf_train from pickle instead of json for slightly faster classification preprocessing. Requires first running famus-convert-sdf for conda users or python -m famus.cli.convert_sdf for source code users after models have been downloaded / trained. [{config.DEFAULT_LOAD_SDF_FROM_PICKLE}]",
     )
     args = parser.parse_args()
     cfg_file_path = args.config
@@ -80,7 +80,11 @@ Example usage:
     if missing_models := [model for model in model_paths if not os.path.exists(model)]:
         raise FileNotFoundError(f"Missing models: {missing_models}")
 
-    if args.load_sdf_from_pickle:
+    if args.load_sdf_from_pickle is None:
+        args.load_sdf_from_pickle = cfg["load_sdf_from_pickle"]
+    else:
+        load_sdf_from_pickle = args.load_sdf_from_pickle
+    if load_sdf_from_pickle:
         for model in models:
             model_path = os.path.join(models_dir, models_type, model)
             sdf_train_path = os.path.join(model_path, "data_dir", "sdf_train.pkl")
@@ -116,7 +120,7 @@ Example usage:
             input_sdf_train_path=sdf_train_path,
             data_dir_path=curr_tmp_path,
             n_processes=n_processes,
-            load_sdf_from_pickle=args.load_sdf_from_pickle,
+            load_sdf_from_pickle=load_sdf_from_pickle,
         )
         logger.info(f"Classifying data for {model}")
         threshold = open(os.path.join(model_path, "env")).read().strip()
@@ -140,7 +144,7 @@ Example usage:
             chunksize=chunksize,
             threshold=threshold,
             n_processes=n_processes,
-            load_sdf_from_pickle=args.load_sdf_from_pickle,
+            load_sdf_from_pickle=load_sdf_from_pickle,
         )
         logger.info(f"Deleting {model} temporary files")
         shutil.rmtree(curr_tmp_path)

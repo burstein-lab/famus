@@ -5,6 +5,7 @@ import sys
 import argparse
 from famus import config
 from .common import get_common_parser
+from .common_model_args import get_common_model_args_parser
 import yaml
 
 
@@ -13,7 +14,7 @@ def main():
     if prog.endswith(".py"):
         prog = "python -m famus.cli.convert_sdf"
     parser = argparse.ArgumentParser(
-        parents=[get_common_parser()],
+        parents=[get_common_parser(), get_common_model_args_parser()],
         description="Convert sdf_train.json files of installed models to pickle format.",
         prog=prog,
         formatter_class=argparse.RawDescriptionHelpFormatter,

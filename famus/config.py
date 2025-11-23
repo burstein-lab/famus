@@ -32,6 +32,7 @@ DEFAULT_LOG_TO_WANDB = False
 DEFAULT_WANDB_PROJECT = "famus"
 DEFAULT_WANDB_API_KEY_PATH = "wandb_api_key.txt"
 DEFAULT_STOP_BEFORE_TRAINING = False
+DEFAULT_LOAD_SDF_FROM_PICKLE = False
 
 
 def load_cfg(config_file, defaults_only=False):
@@ -78,6 +79,7 @@ def get_default_config():
         "wandb_project": DEFAULT_WANDB_PROJECT,
         "wandb_api_key_path": DEFAULT_WANDB_API_KEY_PATH,
         "stop_before_training": DEFAULT_STOP_BEFORE_TRAINING,
+        "load_sdf_from_pickle": DEFAULT_LOAD_SDF_FROM_PICKLE,
     }
 
 

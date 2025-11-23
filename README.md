@@ -72,7 +72,9 @@ To easily download pre-trained models, we provide a command line tool called `fa
 If installed with conda, run `famus-install --models <space-separated list of model names> --models-dir <path to models directory>`. For example, to download the comprehensive KEGG and light InterPro models to famus_models, run:
 `famus-install --models kegg_comprehensive interpro_light --models-dir famus_models`. If using the source code, run `python -m famus.cli.install_models` from the root directory instead of `famus-install`. See details below for a comprehensive list of command line arguments.
 
-Some python data is downloaded as JSON for security reasons. After running this command, it is recommended (but optional) to convert the data that was downloaded as JSON to pickle format for faster data loading. This can be done by running the following command: `python -m convert_sdf`
+Some python data is downloaded as JSON for security reasons. After running this command, it is recommended (but optional) to convert the data that was downloaded as JSON to pickle format for faster data loading. This can be done by running the following command: 
+ - conda: `famus-convert-sdf --models-dir <path to models directory>`
+ - source code: `python -m famus.cli.convert_sdf --models-dir <path to models directory>`
 
 ## Configuration and priority of parameters
 
@@ -102,7 +104,7 @@ Main command line arguments for `famus-classify` (unused arguments will be read 
 - --models - space-separated list of model names to use. 
 - --models-dir - directory where the models are installed.
 - --models-type - comprehensive/light - type of model to use (light may be slightly less accurate but significantly faster).
-- --load-sdf-from-pickle - loads training data from pickle instead of json. Only usable after running `python -m convert_sdf`.
+- --load-sdf-from-pickle - loads training data from pickle instead of json. Only usable on downloaded / trained models after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users.
 - --no-log - do not create a log file.
 - --log-dir - directory to save the log file to.
 
