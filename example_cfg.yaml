@@ -19,7 +19,7 @@ num_epochs: 10
 
 # the following parameters are only relevant for the training preprocessing pipeline
 
-processes_per_mmseqs_job: 4 # positive integer
+mmseqs_n_processes: 4 # positive integer
 number_of_sampled_sequences_per_subcluster: 60 # 'use_all' or positive integer
 fraction_of_sampled_unknown_sequences: 1.0 # 'use_all', 'do_not_use', or 0 <= float <= 1.0
 samples_profiles_product_limit: 150_000_000_000_000 # positive integer

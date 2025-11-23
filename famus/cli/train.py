@@ -140,7 +140,7 @@ Example usage:
     chunksize = args.chunksize or cfg["chunksize"]
     save_every = args.save_every or cfg["save_every"]
     models_dir = args.models_dir or cfg["models_dir"]
-    mmseqs_n_processes = args.mmseqs_n_processes or cfg["mmseq_n_processes"]
+    mmseqs_n_processes = args.mmseqs_n_processes or cfg["mmseqs_n_processes"]
     number_of_sampled_sequences_per_subcluster = (
         args.sampled_sequences_per_subcluster
         or cfg["number_of_sampled_sequences_per_subcluster"]

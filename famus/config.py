@@ -66,7 +66,7 @@ def get_default_config():
         "device": DEFAULT_USER_DEVICE,
         "model_type": DEFAULT_MODEL_TYPE,
         "create_subclusters": DEFAULT_CREATE_SUBCLUSTERS,
-        "mmseq_n_processes": DEFAULT_MMSEQS_N_PROCESSES,
+        "mmseqs_n_processes": DEFAULT_MMSEQS_N_PROCESSES,
         "number_of_sampled_sequences_per_subcluster": DEFAULT_SAMPLED_SEQUENCES_PER_SUBCLUSTER,
         "fraction_of_sampled_unknown_sequences": DEFAULT_FRACTION_OF_SAMPLED_UNKNOWN_SEQUENCES,
         "samples_profiles_product_limit": DEFAULT_SAMPLES_PROFILES_PRODUCT_LIMIT,

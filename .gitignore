@@ -34,4 +34,4 @@ Thumbs.db
 # Conda
 *.tar.bz2
 conda_build/
-
+*.tar.gz
