@@ -18,7 +18,7 @@ We provide one main module for training and one for classification, which automa
 
 To install with conda, first create a new conda environment:
 
-`conda create -n famus -c conda-forge -c bioconda -c guyshur famus`
+`conda create -n famus -c conda-forge -c bioconda famus`
 
 Activate the environment with `conda activate famus` and install the correct pytorch version for your environment from the pytorch website via pip: https://pytorch.org/get-started/locally/
 
