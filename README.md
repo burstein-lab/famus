@@ -1,5 +1,7 @@
 # FAMUS: Functional Annotation Method Using Siamese neural networks
 
+https://anaconda.org/bioconda/famus/badges/version.svg
+
 FAMUS has a web interface available at https://famus-6e94e.web.app/.  
 
 <p align="center">
