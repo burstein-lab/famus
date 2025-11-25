@@ -96,7 +96,7 @@ Main command line arguments for `famus-classify` (unused arguments will be read 
 - --config - path to configuration file.
 - --n-processes - number of cpu cores to use.
 - --device - cpu/cuda
-- --models - space-separated list of model names to use. 
+- --models - space-separated list of model names to use. Note that models must be explicitly chosen via the command line argument or config file, otherwise no classification will be performed.
 - --models-dir - directory where the models are installed.
 - --model-type - comprehensive/light - type of model to use (light may be slightly less accurate but significantly faster).
 - --load-sdf-from-pickle - loads training data from pickle instead of json. Only usable on downloaded / trained models after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users.
@@ -143,7 +143,7 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 ### Classification-specific parameters:
 
 - --model-type: 'comprehensive' or 'light' - type of model to use for classification (light may be slightly less accurate but significantly faster).
-- --models: a space-separated list of protein family databases to use for training or classification. The available pretrained are: kegg, interpro, orthodb, eggnog for both comprehensive and light models. Classification will use all models specified here for the specified model type.
+- --models: a space-separated list of protein family databases to use for training or classification. The available pretrained are: kegg, interpro, orthodb, eggnog for both comprehensive and light models. Classification will use all models specified here for the specified model type. Note that models must be explicitly chosen via the command line argument or config file, otherwise no classification will be performed. This is to prevent unintended classification with large models, particularly in shared environments.
 - --chunksize: positive integer - the number of sequences to process (load to GPU) in each batch during classification - decrease if running out of GPU RAM.
 - --load-sdf-from-pickle: whether to load training data from pickle files instead of json files. Makes classification preprocessing slightly faster. Only usable after running `famus-convert-sdf` for conda users or `python -m famus.cli.convert_sdf` for source code users. Recommended if using models repeatedly.  
  
