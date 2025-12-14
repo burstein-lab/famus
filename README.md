@@ -24,6 +24,8 @@ To install with conda, first create a new conda environment:
 
 Activate the environment with `conda activate famus` and install the correct pytorch version for your environment from the pytorch website via pip: https://pytorch.org/get-started/locally/
 
+If you wish to use WanDB logging during training, install wandb with: `pip install wandb`.
+
 Using famus tools requires that the conda environment is activated. You can check if the installation was successful by running `famus-train -h`.
 
 ### From source
