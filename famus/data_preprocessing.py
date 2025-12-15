@@ -872,7 +872,6 @@ def full_hmmsearch(
 
     (input_full_profiles_dir_path,) = validate_dir_paths([input_full_profiles_dir_path])
 
-    # split fasta_files
     if not tmp_dir_path or not os.path.exists(tmp_dir_path):
         tmp_dir_path = "tmp/{}".format(now()) + "/"
         os.mkdir(tmp_dir_path)

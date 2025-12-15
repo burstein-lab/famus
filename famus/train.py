@@ -339,6 +339,7 @@ def train(
         start_batch=latest_batch,
         save_every=save_every,
         lr=lr,
+        log_to_wandb=log_to_wandb,
     )
     model.save_state(output_path)
     logger.info("Training complete")
