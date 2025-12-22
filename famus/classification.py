@@ -123,23 +123,25 @@ def _calc_embeddings(sdf, model: MLP, device: Any, chunksize, n_processes):
     logger.info("Calculating embeddings from scratch")
     chunksize = min(chunksize, len(sdf))
     num_chunks = int(np.ceil(len(sdf) / chunksize))
+    logger.debug(f"Number of chunks: {num_chunks}")
     embeddings = []
     if device == "cpu":
         torch.set_num_threads(n_processes)
     with torch.no_grad():
         for i in range(num_chunks):
+            logger.debug(f"Calculating chunk {i + 1} / {num_chunks}")
             chunk = sdf.matrix[
                 i * chunksize : min((i + 1) * chunksize, len(sdf))
             ].todense()
             chunk_tensor = torch.tensor(
                 chunk, requires_grad=False, dtype=torch.float32
             ).to(device)
-            embeddings.append(model.forward_once(chunk_tensor))
+            embeddings.append(model.forward_once(chunk_tensor).cpu().numpy())
             del chunk_tensor
 
     # return a numpy array of the embeddings
-    concatenated = torch.cat(embeddings, dim=0)
-    return concatenated.cpu().numpy()
+    concatenated = np.concatenate(embeddings)
+    return concatenated
 
 
 def get_embeddings(
@@ -174,6 +176,7 @@ def calculate_threshold(
     device,
     chunksize,
     n_processes,
+    load_sdf_from_pickle=False,
 ) -> float:
     """
     Calculates a threshold for classification.
@@ -192,12 +195,15 @@ def calculate_threshold(
     logger.info("device: " + str(device))
     logger.info("Loading model")
 
-    snn_model: MLP = load_from_state(model_path)
+    snn_model: MLP = load_from_state(model_path, device=device)
     snn_model.eval()
     snn_model.to(device)
-    sdf_train: SparseDataFrame
     logger.info("Loading dataframes")
-    sdf_train = load(sdf_train_path)
+    if load_sdf_from_pickle:
+        with open(sdf_train_path, "rb") as f:
+            sdf_train = pickle.load(f)
+    else:
+        sdf_train = load(sdf_train_path)
 
     logger.info("Calculating threshold")
     threshold = calc_thresh(
@@ -395,10 +401,13 @@ def get_closest_distances_and_indices(
 ):
     closest_distances = np.array([], dtype=float)
     closest_indices = np.array([], dtype=int)
+    num_chunks = int(np.ceil(len(classifiy_embeddings) / chunksize))
+    logger.debug("Starting closest distance calculations")
     with torch.no_grad():
         for i, classify_chunk in enumerate(
             embedding_chunk_iterator(classifiy_embeddings, chunksize, "classify")
         ):
+            logger.debug(f"Processing classify chunk {i + 1} / {num_chunks}")
             classify_chunk.to(device)
 
             curr_closest_distances = np.array(
@@ -423,6 +432,10 @@ def get_closest_distances_and_indices(
                     is_below_curr_closest_distance
                 ]
                 indices_offset += len(train_chunk)
+                del train_chunk
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+            del classify_chunk
 
             closest_distances = np.concatenate(
                 (closest_distances, curr_closest_distances)
