@@ -270,6 +270,50 @@ class SparseDataFrame(object):
             for label, index_ids in labels.items()
         }
 
+    def merge(self, other: SparseDataFrame) -> SparseDataFrame:
+        """
+        Merges two SparseDataFrames with the same columns but different rows.
+        Ignores index id duplicates in other.
+        If only one dataframe has labels, raises a ValueError.
+        """
+        if not np.array_equal(self.column_names, other.column_names):
+            raise ValueError("Dataframes must have the same columns to be merged")
+        if (self.labels is None and other.labels is not None) or (
+            self.labels is not None and other.labels is None
+        ):
+            raise ValueError("Both dataframes must have labels or neither")
+
+        combined_index_ids = list(self.index_ids)
+        rows, cols, values = (
+            self.matrix.tocoo().row.tolist(),
+            self.matrix.tocoo().col.tolist(),
+            self.matrix.tocoo().data.tolist(),
+        )
+        existing_index_ids = set(self.index_ids)
+        for i, index_id in enumerate(other.index_ids):
+            if index_id in existing_index_ids:
+                continue
+            combined_index_ids.append(index_id)
+            other_row = other.matrix.getrow(i).tocoo()
+            rows.extend((other_row.row + len(self.index_ids)).tolist())
+            cols.extend(other_row.col.tolist())
+            values.extend(other_row.data.tolist())
+        combined_matrix = csr_matrix(
+            (values, (rows, cols)),
+            shape=(len(combined_index_ids), self.matrix.shape[1]),
+        )
+        if self.labels and other.labels:
+            combined_labels = {**self.labels, **other.labels}
+        else:
+            combined_labels = None
+        return SparseDataFrame(
+            combined_matrix,
+            combined_index_ids,
+            combined_labels,
+            self.column_names,
+            self.dtype,
+        )
+
 
 def load(path: str) -> SparseDataFrame:
     """
