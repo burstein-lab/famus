@@ -22,7 +22,7 @@ def auto_configure():
     _is_configured = True
 
 
-def setup_logger(enable_logging=True, log_dir=None):
+def setup_logger(enable_logging=True, log_dir=None, verbose=False):
     global _is_configured
 
     logger.handlers.clear()
@@ -35,7 +35,10 @@ def setup_logger(enable_logging=True, log_dir=None):
         _is_configured = True
         return logger
 
-    logger.setLevel(logging.INFO)
+    if verbose:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
 
     console = logging.StreamHandler(sys.stdout)
     console_format = "%(levelname)s: %(message)s"
