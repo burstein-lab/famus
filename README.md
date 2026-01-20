@@ -1,4 +1,4 @@
-# FAMUS: Functional Annotation Method Using Siamese neural networks
+# FAMUS: Functional Annotation Method Using Supervised contrastive learning
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/famus/README.html)
 
@@ -8,7 +8,7 @@ FAMUS has a web interface available at https://famus-6e94e.web.app/.
 <a href="https://famus-6e94e.web.app/"><img src="https://famus-6e94e.web.app/superfamus.svg" width="96"></a></p>
 
 
-FAMUS is a Siamese Neural Network (SNN) based framework that annotates protein sequences with function. Input sequences are transformed to numeric vectors with pre-trained neural networks tailored to individual protein family databases, and then compared to sequences of those databases to find the closest match.
+FAMUS is a SupCon (Supervised Contrastive) learning based framework that annotates protein sequences with function. Input sequences are transformed to numeric vectors with pre-trained neural networks tailored to individual protein family databases, and then compared to sequences of those databases to find the closest match.
 
 This repository (or the famus conda package) can also be used to train a model for any protein database by using one fasta file for each protein family, and preferrably a large number of negative examples (sequences not belonging to any family in the given database). 
 
@@ -38,7 +38,7 @@ Alternatively, you can download the famus source code note that FAMUS currently 
 Create and activate a new conda or pip virtual environment, then install the required python packages with:
 `pip install -r requirements.txt`
 
-FAMUS has five dependencies (other than python and pip) that need to be installed separately:
+FAMUS has five dependencies (other than python and pip) that need to be installed separately if installing from source:
 
 - PyTorch - follow the instructions at https://pytorch.org/get-started/locally/
 - mmseqs2
@@ -69,7 +69,7 @@ To easily download pre-trained models, we provide a command line tool called `fa
 If installed with conda, run `famus-install --models <space-separated list of model names> --models-dir <path to models directory>`. For example, to download the comprehensive KEGG and light InterPro models to famus_models, run:
 `famus-install --models kegg_comprehensive interpro_light --models-dir famus_models`. If using the source code, run `python -m famus.cli.install_models` from the root directory instead of `famus-install`. See details below for a comprehensive list of command line arguments.
 
-Some python data is downloaded as JSON for security reasons. After running this command, it is recommended (but optional) to convert the data that was downloaded as JSON to pickle format for faster data loading. This can be done by running the following command: 
+Python data is downloaded as JSON for security reasons. After running this command, it is recommended (but optional) to convert the data that was downloaded as JSON to pickle format for faster data loading. This can be done by running the following command: 
  - conda: `famus-convert-sdf --models-dir <path to models directory>`
  - source code: `python -m famus.cli.convert_sdf --models-dir <path to models directory>`
 
@@ -127,11 +127,12 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - --unknown-sequences-fasta-path - fasta file with sequences of unknown function as negative examples for the model. Optional but recommended. Can't be set using the config file and must be provided as a command line argument.
 - --n-processes - number of CPU cores to use.
 - --num-epochs - number of epochs to train the model for.
-- --batch-size - training batch size.
+- --batches-per-epoch - number of batches per epoch.
 - --stop-before-training - calling this module with --stop-before-training will exit before starting to train the model (useful for things like preprocessing in a high-CPU environment and them training the model in a different environment with CUDA).
 - --device - cpu/cuda.
 - --chunksize - reduce if GPU RAM becomes an issue when calculating threshold using GPU.
-- --save-every - save a checkpoint of the model's state every \<save_every> steps. Will load the last checkpoint automatically if the script is restarted.
+- --overwrite-checkpoint - whether to overwrite existing checkpoints if resuming training.
+- --continue-from-checkpoint - whether to continue training from the last checkpoint if one exists.
 
 ## Comprehensive list of configuration parameters
 
@@ -163,10 +164,11 @@ Main command line arguments for `famus-train` (unused arguments will be read fro
 - --mmseqs-cluster-identity: float between 0 and 1 - mmseqs clustering identity parameter during deduplication of protein families. Higher values will de-duplicate less aggressively.
 - --mmseqs-coverage-subclusters: float between 0 and 1 - mmseqs coverage parameter during creation of subclusters within protein families. Higher values will create more and smaller subclusters.
 - --stop-before-training: if set to True, will exit before starting to train the model (useful for things like preprocessing in a high-CPU environment and them training the model in a different environment with CUDA).
-- --save-every: positive integer - save a checkpoint of the model's state every \<save_every> steps. Will load the last checkpoint automatically if the script is restarted.
 - --log-to-wandb: whether to log training metrics to Weights & Biases.
 - --wandb-project-name: name of the Weights & Biases project to log to if --log-to-wandb is set.
 - --wandb-api-key-path: path to a text file containing the Weights & Biases API key if --log-to-wandb is set.
+- --overwrite-checkpoint: whether to overwrite existing checkpoints if resuming training.
+- --continue-from-checkpoint: whether to continue training from the last checkpoint if one exists.
 
 
 
