@@ -280,6 +280,7 @@ def hmmsearch_results_to_train_sdf(
     input_all_sequences_fasta_path: str,
     input_ground_truth_path: str,
     output_sdf_path: str,
+    save_as_pickle: bool = True,
 ) -> None:
     """
     Creates a sparse dataframe from the hmmsearch results.
@@ -382,7 +383,11 @@ def hmmsearch_results_to_train_sdf(
     }
     sdf = from_sparse_dict(sparse_dict, ground_truth, dtype=np.int64)
     logger.info("Saving sparse dataframe")
-    sdf.save(output_sdf_path)
+    if save_as_pickle:
+        with open(output_sdf_path, "wb+") as f:
+            pickle.dump(sdf, f)
+    else:
+        sdf.save(output_sdf_path)
 
 
 def hmmsearch_results_to_classification_sdf(
@@ -432,7 +437,7 @@ def hmmsearch_results_to_classification_sdf(
     for m in missing_records:
         sparse_dict[(m, some_profile)] = 0
 
-    sdf = from_sparse_dict(sparse_dict, lables=None, dtype=np.int64)
+    sdf = from_sparse_dict(sparse_dict, labels=None, dtype=np.int64)
     colnames = list(sdf.column_names)
     new_order = [colnames.index(c) for c in sdf_train.column_names]
     sdf.matrix = sdf.matrix[:, new_order]

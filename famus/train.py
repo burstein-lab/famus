@@ -1,346 +1,842 @@
-import pickle
-from typing import Any
 import os
-import re
-from typing import Tuple
+import pickle
+import random
+from collections import defaultdict
+from pathlib import Path
+from typing import List, Optional, Set
 
-from famus.utils import now
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from scipy.sparse import csr_matrix
 
-try:
-    import torch
-    from torch import optim
-    from torch.nn import TripletMarginLoss
-except ImportError:
-    from famus.logging import logger
+import wandb
+from famus.logging import logger
+from famus.model import MLP
 
-    logger.warning(
-        "PyTorch is not installed. Please install PyTorch to use the train module."
+
+class SDFDataset:
+    def __init__(self, sdf):
+        self.sparse_matrix: csr_matrix = sdf.matrix
+        self.labels = sdf.labels
+        self.index_ids = sdf.index_ids
+
+        self.label_to_indices = defaultdict(list)
+        self.unknown_indices = []
+        self.valid_labels = []
+
+        for idx, index_id in enumerate(self.index_ids):
+            labels = self.labels[index_id]
+            if len(labels) == 1 and labels[0] == "unknown":
+                self.unknown_indices.append(idx)
+            else:
+                for label in labels:
+                    self.label_to_indices[label].append(idx)
+
+        # Keep only labels with at least 2 samples for positive pairs
+        self.valid_labels = [
+            label
+            for label, indices in self.label_to_indices.items()
+            if len(indices) >= 2
+        ]
+
+        if len(self.valid_labels) == 0:
+            raise ValueError("No labels have at least 2 samples")
+
+        if len(self.unknown_indices) == 0:
+            logger.warning("No unknown samples available for negative sampling")
+
+        # Log statistics
+        label_sizes = [len(self.label_to_indices[label]) for label in self.valid_labels]
+        logger.debug(f"Total samples: {len(self)}")
+        logger.debug(f"Valid labels: {len(self.valid_labels)}")
+        logger.debug(f"Unknown samples: {len(self.unknown_indices)}")
+        logger.debug(
+            f"Label sizes - min: {min(label_sizes)}, max: {max(label_sizes)}, "
+            f"median: {np.median(label_sizes):.0f}"
+        )
+
+    def __len__(self):
+        return self.sparse_matrix.shape[0]
+
+    def get_sample(self, idx):
+        """Get a single sample as dense tensor"""
+        row = self.sparse_matrix[idx].toarray().flatten()
+        return torch.tensor(row, dtype=torch.float32)
+
+    def get_labels(self, idx) -> Set[str]:
+        """Get labels for a sample"""
+        return set(self.labels[self.index_ids[idx]])
+
+
+def create_subset_dataset(parent_dataset: SDFDataset, subset_indices: List[int]):
+    class SubsetSDFDataset:
+        def __init__(self, parent, indices):
+            self.parent = parent
+            self.subset_indices = indices
+            self.sparse_matrix = parent.sparse_matrix[indices]
+            self.index_ids = [parent.index_ids[i] for i in indices]
+            self.labels = parent.labels
+
+            self.label_to_indices = defaultdict(list)
+            self.unknown_indices = []
+            self.valid_labels = []
+
+            for new_idx, old_idx in enumerate(indices):
+                labels = self.get_labels(new_idx)
+                if len(labels) == 1 and "unknown" in labels:
+                    self.unknown_indices.append(new_idx)
+                else:
+                    for label in labels:
+                        self.label_to_indices[label].append(new_idx)
+
+            self.valid_labels = [
+                label for label, idxs in self.label_to_indices.items() if len(idxs) >= 2
+            ]
+
+        def get_sample(self, idx):
+            old_idx = self.subset_indices[idx]
+            return self.parent.get_sample(old_idx)
+
+        def get_labels(self, idx) -> Set[str]:
+            old_idx = self.subset_indices[idx]
+            return self.parent.get_labels(old_idx)
+
+        def __len__(self):
+            return len(self.subset_indices)
+
+    return SubsetSDFDataset(parent_dataset, subset_indices)
+
+
+def create_train_val_split(
+    dataset: SDFDataset,
+    min_samples_for_val: int = 10,
+    val_samples_per_label: int = 2,
+    val_n_labels: int = 100,
+    val_n_unknowns: int = 50,
+    seed: int = 42,
+):
+    """
+    Create train/val split that respects label support constraints.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+
+    eligible_labels = []
+
+    label_to_single_label_indices = {}
+    for label in dataset.valid_labels:
+        label_to_single_label_indices[label] = [
+            idx
+            for idx in dataset.label_to_indices[label]
+            if len(dataset.get_labels(idx)) == 1
+        ]
+
+    for label in dataset.valid_labels:
+        n_samples = len(label_to_single_label_indices[label])
+
+        if n_samples >= min_samples_for_val:
+            eligible_labels.append(label)
+
+    if len(eligible_labels) == 0:
+        raise ValueError(f"No labels have at least {min_samples_for_val} samples")
+
+    val_n_labels = min(val_n_labels, len(eligible_labels))
+
+    val_labels = np.random.choice(eligible_labels, size=val_n_labels, replace=False)
+
+    train_indices = []
+    val_indices = []
+    val_label_set = set(val_labels)
+
+    for label in dataset.valid_labels:
+        label_samples = label_to_single_label_indices[label]
+
+        if label in val_label_set:
+            shuffled = list(label_samples)
+            random.shuffle(shuffled)
+            n_val = min(val_samples_per_label, len(shuffled) - 4)
+            val_indices.extend(shuffled[:n_val])
+            train_indices.extend(shuffled[n_val:])
+        else:
+            train_indices.extend(label_samples)
+
+    if len(dataset.unknown_indices) > 0:
+        shuffled_unknowns = list(dataset.unknown_indices)
+        random.shuffle(shuffled_unknowns)
+        n_val_unknowns = min(val_n_unknowns, len(shuffled_unknowns) // 2)
+        val_indices.extend(shuffled_unknowns[:n_val_unknowns])
+        train_indices.extend(shuffled_unknowns[n_val_unknowns:])
+
+    assert len(set(train_indices) & set(val_indices)) == 0
+
+    logger.debug("Split created:")
+    logger.debug(f"  Train: {len(train_indices)} samples")
+    logger.debug(
+        f"  Val: {len(val_indices)} samples ({len(val_indices) / (len(train_indices) + len(val_indices)) * 100:.1f}%)"
     )
 
-from famus.logging import logger
-from famus.model import MLP, load_from_state
-from famus.sdfloader import SDFloader
+    random.seed()
+    np.random.seed()
+
+    return train_indices, val_indices, list(val_labels)
 
 
-def save_state(model: MLP, path: str, batch_num: int, epoch_num: int) -> None:
-    epoch_dir = os.path.join(path, str(f"epoch_{epoch_num}"))
-    os.makedirs(epoch_dir, exist_ok=True)
-    save_path = os.path.join(epoch_dir, f"{batch_num}_checkpoint.pt")
-    model.save_state(save_path)
-    logger.info(f"Saved state to {save_path}")
+class PKBatchSampler:
+    def __init__(
+        self,
+        dataset: SDFDataset,
+        p_labels: int = 8,
+        k_per_label: int = 4,
+        n_negatives: int = 16,
+        num_batches: int = 100,
+        label_sampling_strategy: str = "sqrt_inverse",
+        temperature: float = 1.0,
+    ):
+        """
+        Args:
+            label_sampling_strategy:
+                - "uniform": Equal probability for all labels
+                - "inverse": Weight = 1/n_samples (strong balancing)
+                - "sqrt_inverse": Weight = 1/sqrt(n_samples) (moderate, recommended)
+                - "log_inverse": Weight = 1/log(n_samples+1) (weak balancing)
+            temperature: Higher = more uniform, lower = more aggressive rebalancing
+        """
+        self.dataset = dataset
+        self.p_labels = p_labels
+        self.k_per_label = k_per_label
+        self.n_negatives = n_negatives
+        self.num_batches = num_batches
+        self.label_sampling_strategy = label_sampling_strategy
+        self.temperature = temperature
 
+        # Compute label weights
+        self.label_weights = self._compute_label_weights()
+        self.label_probs = self.label_weights / self.label_weights.sum()
 
-def _train_model(
-    model: MLP,
-    sdfloader: SDFloader,
-    triplet_loss_module,
-    device: Any,
-    checkpoint_dir_path: str,
-    num_epochs=10,
-    batch_size=32,
-    save_checkpoints=True,
-    save_every=100_000,
-    evaluation=True,
-    lr=0.001,
-    start_epoch=0,
-    start_batch=0,
-    log_to_wandb=False,
-) -> MLP:
-    """
-    Train a model using a triplet loss function.
-    """
-    if not isinstance(num_epochs, int):
-        raise ValueError("num_epochs must be an integer")
-    if not num_epochs > 0:
-        raise ValueError("num_epochs must be greater than 0")
-    if not isinstance(batch_size, int):
-        raise ValueError("batch_size must be an integer")
-    if not batch_size > 0:
-        raise ValueError("batch_size must be greater than 0")
-    if not isinstance(save_checkpoints, bool):
-        raise ValueError("save_checkpoints must be a boolean")
-    if not isinstance(evaluation, bool):
-        raise ValueError("evaluation must be a boolean")
-    if not isinstance(save_every, int):
-        raise ValueError("save_every must be an integer")
-    if not save_every > 0:
-        raise ValueError("save_every must be greater than 0")
-    if not isinstance(lr, float):
-        raise ValueError("lr must be a float")
-    if not lr > 0:
-        raise ValueError("lr must be greater than 0")
-    if not isinstance(start_epoch, int):
-        raise ValueError("start_epoch must be an integer")
-    if not start_epoch >= 0:
-        raise ValueError("start_epoch must be greater than or equal to 0")
-    if not isinstance(start_batch, int):
-        raise ValueError("start_batch must be an integer")
-    if not start_batch >= 0:
-        raise ValueError("start_batch must be greater than or equal to 0")
+        self._log_sampling_stats()
 
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    model.train()
-    total_batches = sdfloader.get_num_batches(batch_size)
-    eval_round = False
-    steps_taken = 1
-    if log_to_wandb:
-        import wandb
+    def _compute_label_weights(self):
+        """Compute sampling weight for each label"""
+        weights = []
 
-    for epoch_num in range(start_epoch, num_epochs):
-        batch_num = 0
-        batch: tuple
-        for batch in sdfloader.triplet_batch_generator(batch_size=batch_size):
-            batch = (
-                batch[0].float().to(device),
-                batch[1].float().to(device),
-                batch[2].float().to(device),
+        for label in self.dataset.valid_labels:
+            n_samples = len(self.dataset.label_to_indices[label])
+
+            if self.label_sampling_strategy == "uniform":
+                weight = 1.0
+            elif self.label_sampling_strategy == "inverse":
+                weight = 1.0 / n_samples
+            elif self.label_sampling_strategy == "sqrt_inverse":
+                weight = 1.0 / np.sqrt(n_samples)
+            elif self.label_sampling_strategy == "log_inverse":
+                weight = 1.0 / np.log(n_samples + 1)
+            else:
+                raise ValueError(f"Unknown strategy: {self.label_sampling_strategy}")
+
+            weight = weight ** (1.0 / self.temperature)
+            weights.append(weight)
+
+        return np.array(weights)
+
+    def _log_sampling_stats(self):
+        """Log statistics about label sampling distribution"""
+        label_sizes = [
+            len(self.dataset.label_to_indices[label])
+            for label in self.dataset.valid_labels
+        ]
+
+        logger.info(
+            f"Batch sampler - strategy: {self.label_sampling_strategy}, temp: {self.temperature}"
+        )
+
+        if self.label_sampling_strategy != "uniform":
+            small_idx = np.argmin(label_sizes)
+            large_idx = np.argmax(label_sizes)
+
+            small_prob = self.label_probs[small_idx]
+            large_prob = self.label_probs[large_idx]
+
+            logger.debug(
+                f"  Smallest label ({label_sizes[small_idx]} samples): {small_prob * 100:.3f}% probability"
+            )
+            logger.debug(
+                f"  Largest label ({label_sizes[large_idx]} samples): {large_prob * 100:.3f}% probability"
+            )
+            logger.debug(f"  Rebalancing ratio: {small_prob / large_prob:.1f}x")
+
+    def __iter__(self):
+        for _ in range(self.num_batches):
+            batch_indices = []
+            batch_labels_used = set()
+
+            sampled_labels = np.random.choice(
+                self.dataset.valid_labels,
+                size=min(self.p_labels, len(self.dataset.valid_labels)),
+                replace=False,
             )
 
-            if batch_num < start_batch and epoch_num <= start_epoch:
-                logger.info("Skipping completed batches..")
+            # Sample K instances per label
+            for label in sampled_labels:
+                available_indices = self.dataset.label_to_indices[label]
+                k = min(self.k_per_label, len(available_indices))
+                sampled_indices = random.sample(available_indices, k)
+                batch_indices.extend(sampled_indices)
 
-                batch_num += 1
+                for idx in sampled_indices:
+                    batch_labels_used.update(self.dataset.get_labels(idx))
+
+            # Add negative samples
+            negative_candidates = self.dataset.unknown_indices.copy()
+
+            for label, indices in self.dataset.label_to_indices.items():
+                if label not in batch_labels_used:
+                    negative_candidates.extend(indices)
+
+            negative_candidates = list(set(negative_candidates) - set(batch_indices))
+
+            if len(negative_candidates) > 0:
+                n = min(self.n_negatives, len(negative_candidates))
+                negatives = random.sample(negative_candidates, n)
+                batch_indices.extend(negatives)
+
+            yield batch_indices
+
+    def __len__(self):
+        return self.num_batches
+
+
+class SupervisedContrastiveLoss(nn.Module):
+    def __init__(self, temperature: float = 0.07):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, embeddings, indices, dataset):
+        batch_size = embeddings.size(0)
+        device = embeddings.device
+
+        label_matrix = torch.zeros(
+            batch_size, batch_size, dtype=torch.bool, device=device
+        )
+        has_unknown = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+        for i, idx_i in enumerate(indices):
+            labels_i = dataset.get_labels(idx_i)
+            is_unknown_i = len(labels_i) == 1 and "unknown" in labels_i
+            has_unknown[i] = is_unknown_i
+
+            if not is_unknown_i:
+                for j, idx_j in enumerate(indices):
+                    if i != j:
+                        labels_j = dataset.get_labels(idx_j)
+                        is_unknown_j = len(labels_j) == 1 and "unknown" in labels_j
+
+                        if (
+                            not is_unknown_j
+                            and len(labels_i.intersection(labels_j)) > 0
+                        ):
+                            label_matrix[i, j] = True
+
+        similarity = torch.matmul(embeddings, embeddings.T) / self.temperature
+        mask_self = torch.eye(batch_size, dtype=torch.bool, device=device)
+        similarity = similarity.masked_fill(mask_self, -float("inf"))
+        losses = []
+
+        for i in range(batch_size):
+            if has_unknown[i]:
                 continue
-            # calculate euclidean distance
-            # between the ancor and positive samples
-            # and between the ancor and negative samples
+            positives_mask = label_matrix[i] & ~has_unknown
+            if not positives_mask.any():
+                continue
+            negatives_mask = ~label_matrix[i] | has_unknown
+            negatives_mask[i] = False
+            if not negatives_mask.any():
+                continue
 
-            if batch_num == start_batch and epoch_num == start_epoch:
-                logger.info(
-                    f"Starting training from checkpoint epoch {epoch_num} and batch {batch_num}"
-                )
-            if save_checkpoints and steps_taken % save_every == 0:
-                save_state(model, checkpoint_dir_path, batch_num, epoch_num)
-            if (
-                evaluation and batch_num % 10 == 0
-            ):  # the dataset isn't shuffled after each epoch and batch size is static, so it's unnecessary to separate the evaluation set from the training set
-                eval_round = True
-            else:
-                eval_round = False
-            if not device == "cpu":
-                batch = (
-                    batch[0].float().to(device),
-                    batch[1].float().to(device),
-                    batch[2].float().to(device),
-                )
-            else:
-                batch = (batch[0].float(), batch[1].float(), batch[2].float())
-            if eval_round:
+            pos_sims = similarity[i][positives_mask]
+            all_sims = similarity[i][positives_mask | negatives_mask]
+
+            pos_log_sum = torch.logsumexp(pos_sims, dim=0)
+            all_log_sum = torch.logsumexp(all_sims, dim=0)
+
+            loss = -(pos_log_sum - all_log_sum)
+            losses.append(loss)
+
+        if len(losses) == 0:
+            return torch.tensor(0.0, device=device, requires_grad=True)
+
+        return torch.stack(losses).mean()
+
+
+def compute_distance_metrics(embeddings, indices, dataset, device):
+    batch_size = embeddings.size(0)
+
+    label_matrix = torch.zeros(batch_size, batch_size, dtype=torch.bool, device=device)
+    has_unknown = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+    for i, idx_i in enumerate(indices):
+        labels_i = dataset.get_labels(idx_i)
+        is_unknown_i = len(labels_i) == 1 and "unknown" in labels_i
+        has_unknown[i] = is_unknown_i
+
+        if not is_unknown_i:
+            for j, idx_j in enumerate(indices):
+                if i != j:
+                    labels_j = dataset.get_labels(idx_j)
+                    is_unknown_j = len(labels_j) == 1 and "unknown" in labels_j
+
+                    if not is_unknown_j and len(labels_i.intersection(labels_j)) > 0:
+                        label_matrix[i, j] = True
+
+    distances = torch.cdist(embeddings, embeddings, p=2)
+
+    hardest_pos_dists = []
+    hardest_neg_dists = []
+    mean_pos_dists = []
+    mean_neg_dists = []
+
+    for i in range(batch_size):
+        if has_unknown[i]:
+            continue
+
+        positives_mask = label_matrix[i] & ~has_unknown
+        if not positives_mask.any():
+            continue
+
+        negatives_mask = (~label_matrix[i] | has_unknown) & (
+            torch.arange(batch_size, device=device) != i
+        )
+        if not negatives_mask.any():
+            continue
+
+        pos_dists = distances[i][positives_mask]
+        neg_dists = distances[i][negatives_mask]
+
+        # Keep as tensors, not Python scalars
+        hardest_pos_dists.append(pos_dists.max())
+        hardest_neg_dists.append(neg_dists.min())
+        mean_pos_dists.append(pos_dists.mean())
+        mean_neg_dists.append(neg_dists.mean())
+
+    if len(hardest_pos_dists) == 0:
+        return None
+
+    hardest_pos_tensor = torch.stack(hardest_pos_dists)
+    hardest_neg_tensor = torch.stack(hardest_neg_dists)
+    mean_pos_tensor = torch.stack(mean_pos_dists)
+    mean_neg_tensor = torch.stack(mean_neg_dists)
+
+    metrics = {
+        "mean_hardest_pos_dist": hardest_pos_tensor.mean().item(),
+        "mean_hardest_neg_dist": hardest_neg_tensor.mean().item(),
+        "hardest_distance_ratio": (
+            hardest_neg_tensor.mean() / (hardest_pos_tensor.mean() + 1e-8)
+        ).item(),
+        "mean_pos_dist": mean_pos_tensor.mean().item(),
+        "mean_neg_dist": mean_neg_tensor.mean().item(),
+        "mean_distance_ratio": (
+            mean_neg_tensor.mean() / (mean_pos_tensor.mean() + 1e-8)
+        ).item(),
+    }
+
+    return metrics
+
+
+def create_fixed_eval_batch(
+    dataset, p_labels=16, k_per_label=8, n_negatives=32, seed=42
+):
+    random.seed(seed)
+    np.random.seed(seed)
+
+    batch_indices = []
+    batch_labels_used = set()
+
+    sampled_labels = random.sample(
+        dataset.valid_labels, min(p_labels, len(dataset.valid_labels))
+    )
+
+    for label in sampled_labels:
+        available = dataset.label_to_indices[label]
+        k = min(k_per_label, len(available))
+        batch_indices.extend(random.sample(available, k))
+
+        for idx in batch_indices[-k:]:
+            batch_labels_used.update(dataset.get_labels(idx))
+
+    negative_candidates = dataset.unknown_indices.copy()
+
+    for label, indices in dataset.label_to_indices.items():
+        if label not in batch_labels_used:
+            negative_candidates.extend(indices[: min(10, len(indices))])
+
+    negative_candidates = list(set(negative_candidates) - set(batch_indices))
+
+    if len(negative_candidates) > 0:
+        n = min(n_negatives, len(negative_candidates))
+        batch_indices.extend(random.sample(negative_candidates, n))
+
+    random.seed()
+    np.random.seed()
+
+    return batch_indices
+
+
+def _train(
+    train_dataset: SDFDataset,
+    val_dataset: SDFDataset,
+    input_dim: int,
+    embedding_dim: int = 320,
+    hidden_dims: Optional[List[int]] = None,
+    temperature: float = 0.25,
+    p_labels: int = 8,
+    k_per_label: int = 4,
+    n_negatives: int = 16,
+    label_sampling_strategy: str = "sqrt_inverse",
+    sampling_temperature: float = 1.0,
+    num_epochs: int = 50,
+    batches_per_epoch: int = 10_000,
+    learning_rate: float = 1e-5,
+    weight_decay: float = 0.0,
+    log_metrics_every: int = 100,
+    val_eval_every: int = 2000,
+    checkpoint_dir: str = "checkpoints",
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    use_wandb: bool = False,
+    wandb_project: str = "embedding_training",
+    overwrite_checkpoint: bool = False,
+    continue_from_checkpoint: bool = False,
+    wandb_api_key_path: str = "wandb_api_key.txt",
+    return_best: bool = True,
+):
+    if (
+        not overwrite_checkpoint
+        and not continue_from_checkpoint
+        and Path(f"{checkpoint_dir}/checkpoint_best.pt").exists()
+    ):
+        raise FileExistsError(
+            f"Checkpoint directory {checkpoint_dir} already exists. "
+            f"Use 'overwrite_checkpoint=True' to overwrite or 'continue_from_checkpoint=True' to continue training."
+        )
+
+    if continue_from_checkpoint and overwrite_checkpoint:
+        raise ValueError(
+            "Cannot use both 'overwrite_checkpoint' and 'continue_from_checkpoint' options simultaneously."
+        )
+
+    Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+    best_path = os.path.join(checkpoint_dir, "checkpoint_best.pt")
+    if continue_from_checkpoint:
+        checkpoint_files = list(Path(checkpoint_dir).glob("checkpoint_epoch_*.pt"))
+        if len(checkpoint_files) == 0:
+            raise FileNotFoundError(f"No checkpoint files found in '{checkpoint_dir}'.")
+        latest_checkpoint = max(
+            checkpoint_files, key=lambda x: int(x.stem.split("_")[-1])
+        )
+
+        model = MLP.load_from_state(str(latest_checkpoint), device=device)
+
+        logger.info(f"Continuing training from checkpoint: {latest_checkpoint}")
+
+    else:
+        model = MLP(
+            input_dim=input_dim, embedding_dim=embedding_dim, hidden_dims=hidden_dims
+        )
+        model.to(device)
+
+    criterion = SupervisedContrastiveLoss(temperature=temperature)
+
+    optimizer = optim.Adam(
+        model.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
+
+    train_track_batch = create_fixed_eval_batch(train_dataset, seed=42)
+    val_batch = create_fixed_eval_batch(val_dataset, seed=43)
+
+    logger.debug("Fixed batches created:")
+    logger.debug(f"  Train tracking: {len(train_track_batch)} samples")
+    logger.debug(f"  Validation: {len(val_batch)} samples")
+
+    if use_wandb:
+        try:
+            with open("wandb_api_key.txt", "r") as f:
+                wandb.login(key=f.read().strip())
+        except:
+            logger.warning("Could not load wandb API key, attempting anonymous login")
+
+        wandb.init(
+            project=wandb_project,
+            config={
+                "architecture": {
+                    "embedding_dim": embedding_dim,
+                    "hidden_dims": hidden_dims or [320, 320, 320],
+                },
+                "loss": {
+                    "temperature": temperature,
+                },
+                "sampling": {
+                    "p_labels": p_labels,
+                    "k_per_label": k_per_label,
+                    "n_negatives": n_negatives,
+                    "strategy": label_sampling_strategy,
+                    "temperature": sampling_temperature,
+                },
+                "optimization": {
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "num_epochs": num_epochs,
+                    "batches_per_epoch": batches_per_epoch,
+                },
+                "data": {
+                    "train_samples": len(train_dataset),
+                    "val_samples": len(val_dataset),
+                    "train_labels": len(train_dataset.valid_labels),
+                    "val_labels": len(val_dataset.valid_labels),
+                },
+            },
+        )
+
+    logger.debug("=" * 80)
+    logger.debug("Starting training with settings:")
+    logger.debug(f"  Sampling: {label_sampling_strategy}")
+    logger.debug(f"  Device: {device}")
+    logger.debug("=" * 80)
+
+    global_step = 0
+    best_val_ratio = 0.0
+
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0.0
+        num_batches = 0
+
+        batch_sampler = PKBatchSampler(
+            train_dataset,
+            p_labels=p_labels,
+            k_per_label=k_per_label,
+            n_negatives=n_negatives,
+            num_batches=batches_per_epoch,
+            label_sampling_strategy=label_sampling_strategy,
+            temperature=sampling_temperature,
+        )
+
+        for batch_indices in batch_sampler:
+            batch_data = torch.stack(
+                [train_dataset.get_sample(i) for i in batch_indices]
+            ).to(device)
+            embeddings = model(batch_data)
+            loss = criterion(embeddings, batch_indices, train_dataset)
+
+            if global_step % log_metrics_every == 0:
                 model.eval()
                 with torch.no_grad():
-                    preds = model(batch)
-                model.train()
-            else:
-                preds = model(batch)
-            ancor_preds, positive_preds, negative_preds = preds[0], preds[1], preds[2]
-            loss = triplet_loss_module(ancor_preds, positive_preds, negative_preds)
-            loss_float = round(loss.item(), 4)
-            if not eval_round:
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-            else:
-                if log_to_wandb:
-                    wandb.log(
-                        {
-                            "eval_loss": loss_float,
-                            "epoch": epoch_num,
-                            "batch_num": batch_num,
-                            "steps_taken": steps_taken,
-                        },
-                        step=steps_taken,
+                    track_data = torch.stack(
+                        [train_dataset.get_sample(i) for i in train_track_batch]
+                    ).to(device)
+                    track_embeddings = model(track_data)
+                    track_metrics = compute_distance_metrics(
+                        track_embeddings, train_track_batch, train_dataset, device
                     )
 
-            msg = (
-                "Epoch: "
-                + str(epoch_num)
-                + " Batch: "
-                + str(batch_num)
-                + "/"
-                + str(total_batches)
-                + " Loss: "
-                + str(loss_float)
-            )
-            if eval_round:
-                msg += " (eval round)"
+                    if track_metrics is not None:
+                        # Log all metrics to wandb (including current loss)
+                        if use_wandb:
+                            wandb_metrics = {
+                                f"train_track_{k}": v for k, v in track_metrics.items()
+                            }
+                            # Also log the current training loss at this checkpoint
+                            wandb_metrics["train_track_loss"] = loss.item()
+                            wandb.log(wandb_metrics, step=global_step)
 
-            logger.debug(msg)
-            batch_num += 1
-            steps_taken += 1
+                        logger.debug(
+                            f"Step {global_step}: [TRAIN] Loss={loss.item():.4f}, "
+                            f"Hard ratio={track_metrics['hardest_distance_ratio']:.3f}, "
+                            f"Pos={track_metrics['mean_hardest_pos_dist']:.3f}, "
+                            f"Neg={track_metrics['mean_hardest_neg_dist']:.3f}"
+                        )
+                model.train()
+
+            # True validation metrics (less frequent)
+            if global_step % val_eval_every == 0 and global_step > 0:
+                model.eval()
+                with torch.no_grad():
+                    val_data = torch.stack(
+                        [val_dataset.get_sample(i) for i in val_batch]
+                    ).to(device)
+                    val_embeddings = model(val_data)
+                    val_metrics = compute_distance_metrics(
+                        val_embeddings, val_batch, val_dataset, device
+                    )
+
+                    if val_metrics is not None:
+                        # Log all validation metrics to wandb
+                        if use_wandb:
+                            wandb_val_metrics = {
+                                f"val_{k}": v for k, v in val_metrics.items()
+                            }
+                            wandb.log(wandb_val_metrics, step=global_step)
+
+                        logger.info(
+                            f"Step {global_step}: [VAL] "
+                            f"Hard ratio={val_metrics['hardest_distance_ratio']:.3f}, "
+                            f"Mean ratio={val_metrics['mean_distance_ratio']:.3f}, "
+                            f"Pos={val_metrics['mean_hardest_pos_dist']:.3f}, "
+                            f"Neg={val_metrics['mean_hardest_neg_dist']:.3f}"
+                        )
+
+                        if val_metrics["hardest_distance_ratio"] > best_val_ratio:
+                            best_val_ratio = val_metrics["hardest_distance_ratio"]
+
+                            torch.save(
+                                {
+                                    "step": int(global_step),
+                                    "epoch": int(epoch),
+                                    "model_state_dict": model.state_dict(),
+                                    "optimizer_state_dict": optimizer.state_dict(),
+                                    "val_ratio": float(best_val_ratio),
+                                },
+                                best_path,
+                            )
+                            logger.info(
+                                f"New best validation ratio: {best_val_ratio:.3f}"
+                            )
+
+                model.train()
+
+            # Optimization step
+            if loss.item() > 0:
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                epoch_loss += loss.item()
+                num_batches += 1
+
+            global_step += 1
+
+        scheduler.step()
+
+        # Epoch summary
+        if num_batches > 0:
+            avg_loss = epoch_loss / num_batches
+            logger.info(
+                f"Epoch {epoch + 1}/{num_epochs} complete: "
+                f"Avg Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.2e}"
+            )
+
+        # Save checkpoint
+        checkpoint_path = f"{checkpoint_dir}/checkpoint_epoch_{epoch + 1}.pt"
+        torch.save(
+            {
+                "epoch": int(epoch),
+                "step": int(global_step),
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "loss": float(avg_loss) if num_batches > 0 else None,
+            },
+            checkpoint_path,
+        )
+
+    if use_wandb:
+        wandb.finish()
+
+    logger.info("Training complete!")
+
+    logger.info(f"Best validation ratio: {best_val_ratio:.3f}")
+
+    if return_best:
+        logger.info("Loading best model from checkpoint...")
+        best_checkpoint = torch.load(best_path, map_location=device)
+        model.load_state_dict(best_checkpoint["model_state_dict"])
+
     return model
 
 
-def get_latest_checkpoint(checkpoint_dir_path: str) -> Tuple[int, int]:
-    if not os.path.exists(checkpoint_dir_path):
-        raise ValueError(f"Path {checkpoint_dir_path} does not exist")
-    epochs = os.listdir(checkpoint_dir_path)
-    if not epochs:
-        return None
-    pattern = re.compile(r"epoch_\d+")
-    filtered = [e for e in epochs if pattern.match(e)]
-    latest_epoch = max([int(e.split("_")[1]) for e in filtered])
-    epoch_dir = os.path.join(checkpoint_dir_path, f"epoch_{latest_epoch}")
-    files = os.listdir(epoch_dir)
-    pattern = re.compile(r"\d+_checkpoint\.pt")
-    files = [f for f in files if pattern.match(f)]
-    if not files:
-        return None
-    latest_checkpoint = max([int(f.split("_")[0]) for f in files])
-    return latest_epoch, latest_checkpoint
-
-
-def get_latest_checkpoint_path(checkpoint_dir_path: str) -> str:
-    if latest_epoch_and_checkpoint := get_latest_checkpoint(checkpoint_dir_path):
-        return (
-            os.path.join(
-                checkpoint_dir_path,
-                f"epoch_{latest_epoch_and_checkpoint[0]}/{latest_epoch_and_checkpoint[1]}_checkpoint.pt",
-            ),
-            latest_epoch_and_checkpoint[0],
-            latest_epoch_and_checkpoint[1],
-        )
-    return None
-
-
 def train(
-    sdfloader_path: str,
-    output_path: str,
-    device: str,
-    num_epochs=10,
-    batch_size=32,
-    save_checkpoints=False,
-    checkpoint_dir_path=None,
-    evaluation=True,
-    save_every=100_000,
-    lr=0.001,
-    n_processes=1,
-    log_to_wandb=False,
-    wandb_project="famus",
-    wandb_api_key_path=None,
-) -> None:
-    if os.path.exists(output_path):
-        logger.info("Output path already exists. Exiting.")
-        return
-    if save_checkpoints and not checkpoint_dir_path:
-        raise ValueError(
-            "Checkpoint dir path is required when save_checkpoints is True"
-        )
-    if checkpoint_dir_path:
-        os.makedirs(checkpoint_dir_path, exist_ok=True)
-    output_dir_path = os.path.dirname(output_path)
-    if not os.path.exists(output_dir_path):
-        raise ValueError(f"Path {output_dir_path} does not exist")
-    if not isinstance(num_epochs, int):
-        raise ValueError("num_epochs must be an integer")
-    if not num_epochs > 0:
-        raise ValueError("num_epochs must be greater than 0")
-    if not isinstance(batch_size, int):
-        raise ValueError("batch_size must be an integer")
-    if not batch_size > 0:
-        raise ValueError("batch_size must be greater than 0")
+    sdf_path: str,
+    checkpoint_dir: str,
+    model_output_path: str,
+    seed: int = 42,
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    embedding_dim: int = 320,
+    hidden_dims: Optional[List[int]] = None,
+    temperature: float = 0.25,
+    p_labels: int = 16,
+    k_per_label: int = 8,
+    n_negatives: int = 64,
+    label_sampling_strategy: str = "uniform",
+    sampling_temperature: float = 1.0,
+    num_epochs: int = 50,
+    batches_per_epoch: int = 10_000,
+    learning_rate: float = 1e-5,
+    log_metrics_every: int = 100,
+    val_eval_every: int = 2000,
+    use_wandb: bool = True,
+    wandb_project: str = "famus",
+    wandb_api_key_path: str = "wandb_api_key.txt",
+    overwrite_checkpoint: bool = False,
+    continue_from_checkpoint: bool = False,
+    return_best: bool = True,
+):
+    logger.info("Loading SDF...")
+    sdf = pickle.load(open(sdf_path, "rb"))
 
-    if device == "cuda":
-        if not torch.cuda.is_available():
-            raise ValueError("cuda is not available in this environment")
-        device = torch.device("cuda")
-    elif device == "cpu":
-        device = torch.device("cpu")
-        torch.set_num_threads(n_processes)
-    if log_to_wandb:
-        import wandb
+    logger.info("Creating full dataset...")
+    full_dataset = SDFDataset(sdf)
 
-    with open(sdfloader_path, "rb") as f:
-        sdfloader: SDFloader = pickle.load(f)
-    logger.info("sdfloader_path: " + sdfloader_path)
-    logger.info("output_path: " + output_path)
-    logger.info("device:" + str(device))
-    input_size = sdfloader.sdf.matrix.shape[1]
-    logger.info("input size: " + str(input_size))
-    logger.info(f"Learning rate: {lr}")
-    logger.info(f"Batch size: {batch_size}")
-    logger.info(f"Number of epochs: {num_epochs}")
-    if checkpoint_dir_path:
-        if checkpoint_data := get_latest_checkpoint_path(checkpoint_dir_path):
-            state_path, latest_epoch, latest_batch = (
-                checkpoint_data[0],
-                checkpoint_data[1],
-                checkpoint_data[2],
-            )
-            snn_model = load_from_state(state_path)
-            logger.info(f"Loaded model from {state_path}")
-        else:
-            snn_model = MLP(input_size=input_size, num_layers=3, embedding_size=320)
-            snn_model.to(device)
-            latest_epoch = 0
-            latest_batch = 0
-    else:
-        snn_model = MLP(input_size=input_size, num_layers=3, embedding_size=320)
-        snn_model.to(device)
-        latest_epoch = 0
-        latest_batch = 0
-
-    logger.info("Starting to train on device: " + str(device))
-    loss = TripletMarginLoss(margin=1, p=2)
-    if log_to_wandb:
-        if wandb_api_key_path:
-            with open(wandb_api_key_path, "r") as f:
-                wandb.login(key=f.read().strip())
-        else:
-            wandb.login()
-        time = now()
-        model_dir = os.path.basename(os.path.dirname(output_path))
-        run_name = f"{model_dir}_{time}"
-        wandb.init(
-            project=wandb_project,
-            name=run_name,
-            config={
-                "num_epochs": num_epochs,
-                "batch_size": batch_size,
-                "learning_rate": lr,
-                "device": str(device),
-            },
-        )
-        wandb.watch(snn_model, log="all")
-    else:
-        logger.info("wandb logging is disabled.")
-    if save_checkpoints:
-        if not checkpoint_dir_path:
-            raise ValueError(
-                "checkpoint_dir_path is required when save_checkpoints is True"
-            )
-        if not os.path.exists(checkpoint_dir_path):
-            os.makedirs(checkpoint_dir_path, exist_ok=True)
-        logger.info(f"Checkpoints will be saved to {checkpoint_dir_path}")
-    else:
-        logger.info(
-            "Checkpoints will not be saved. Set save_checkpoints=True to enable it."
-        )
-    if latest_epoch > 0 or latest_batch > 0:
-        logger.info(
-            f"Resuming training from epoch {latest_epoch} and batch {latest_batch}. "
-            "If this is not intended, please delete the checkpoint directory."
-        )
-    else:
-        logger.info("Starting training from scratch.")
-
-    logger.info("Training model")
-    model = _train_model(
-        model=snn_model,
-        sdfloader=sdfloader,
-        triplet_loss_module=loss,
-        device=device,
-        num_epochs=num_epochs,
-        batch_size=batch_size,
-        evaluation=evaluation,
-        save_checkpoints=save_checkpoints,
-        checkpoint_dir_path=checkpoint_dir_path,
-        start_epoch=latest_epoch,
-        start_batch=latest_batch,
-        save_every=save_every,
-        lr=lr,
-        log_to_wandb=log_to_wandb,
+    logger.info("Creating train/val split...")
+    train_indices, val_indices, val_labels = create_train_val_split(
+        full_dataset,
+        min_samples_for_val=15,
+        val_samples_per_label=3,
+        val_n_labels=100,
+        val_n_unknowns=50,
+        seed=seed,
     )
-    model.save_state(output_path)
-    logger.info("Training complete")
-    logger.info("Model saved to " + output_path)
+
+    train_dataset = create_subset_dataset(full_dataset, train_indices)
+    val_dataset = create_subset_dataset(full_dataset, val_indices)
+
+    logger.info("Datasets ready:")
+    logger.info(
+        f"  Train: {len(train_dataset)} samples, {len(train_dataset.valid_labels)} labels"
+    )
+    logger.info(
+        f"  Val: {len(val_dataset)} samples, {len(val_dataset.valid_labels)} labels"
+    )
+    if hidden_dims is None:
+        hidden_dims = [320, 320, 320]
+    # Train model
+    model = _train(
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        input_dim=train_dataset.sparse_matrix.shape[1],
+        embedding_dim=embedding_dim,
+        hidden_dims=hidden_dims,
+        temperature=temperature,
+        p_labels=p_labels,
+        k_per_label=k_per_label,
+        n_negatives=n_negatives,
+        label_sampling_strategy=label_sampling_strategy,
+        sampling_temperature=sampling_temperature,
+        num_epochs=num_epochs,
+        batches_per_epoch=batches_per_epoch,
+        learning_rate=learning_rate,
+        log_metrics_every=log_metrics_every,
+        val_eval_every=val_eval_every,
+        checkpoint_dir=checkpoint_dir,
+        device=device,
+        use_wandb=use_wandb,
+        wandb_project=wandb_project,
+        wandb_api_key_path=wandb_api_key_path,
+        overwrite_checkpoint=overwrite_checkpoint,
+        continue_from_checkpoint=continue_from_checkpoint,
+        return_best=return_best,
+    )
+
+    logger.info("All done!")
+    logger.info(f"Saving final model to {model_output_path}...")
+    torch.save({"model_state_dict": model.state_dict()}, model_output_path)
+    logger.info("Model saved.")

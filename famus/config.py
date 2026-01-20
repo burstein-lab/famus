@@ -13,10 +13,9 @@ DEFAULT_LOG_DIR = FAMUS_HOME / "logs"
 DEFAULT_NO_LOG = False
 DEFAULT_N_PROCESSES = 4
 DEFAULT_MODELS_DIR = FAMUS_HOME / "models"
-DEFAULT_NUM_EPOCHS = 10
-DEFAULT_BATCH_SIZE = 32
+DEFAULT_NUM_EPOCHS = 50
+DEFAULT_BATCHES_PER_EPOCH = 10_000
 DEFAULT_CHUNKSIZE = 20_000
-DEFAULT_SAVE_EVERY_BATCHES = 100_000
 DEFAULT_DEVICE = "cuda"
 DEFAULT_MODEL_TYPE = "comprehensive"
 DEFAULT_CREATE_SUBCLUSTERS = True
@@ -33,6 +32,8 @@ DEFAULT_WANDB_PROJECT = "famus"
 DEFAULT_WANDB_API_KEY_PATH = "wandb_api_key.txt"
 DEFAULT_STOP_BEFORE_TRAINING = False
 DEFAULT_LOAD_SDF_FROM_PICKLE = False
+DEFAULT_OVERWRITE_CHECKPOINT = False
+DEFAULT_CONTINUE_FROM_CHECKPOINT = False
 
 
 def load_cfg(config_file, defaults_only=False):
@@ -61,8 +62,7 @@ def get_default_config():
         "n_processes": DEFAULT_N_PROCESSES,
         "models_dir": str(DEFAULT_MODELS_DIR),
         "num_epochs": DEFAULT_NUM_EPOCHS,
-        "batch_size": DEFAULT_BATCH_SIZE,
-        "save_every": DEFAULT_SAVE_EVERY_BATCHES,
+        "batches_per_epoch": DEFAULT_BATCHES_PER_EPOCH,
         "chunksize": DEFAULT_CHUNKSIZE,
         "device": DEFAULT_DEVICE,
         "model_type": DEFAULT_MODEL_TYPE,
@@ -80,6 +80,8 @@ def get_default_config():
         "wandb_api_key_path": DEFAULT_WANDB_API_KEY_PATH,
         "stop_before_training": DEFAULT_STOP_BEFORE_TRAINING,
         "load_sdf_from_pickle": DEFAULT_LOAD_SDF_FROM_PICKLE,
+        "overwrite_checkpoint": DEFAULT_OVERWRITE_CHECKPOINT,
+        "continue_from_checkpoint": DEFAULT_CONTINUE_FROM_CHECKPOINT,
     }
 
 

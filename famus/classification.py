@@ -1,6 +1,6 @@
 import os
 import pickle
-from typing import Any, Tuple
+from typing import Any
 
 import numpy as np
 from sklearn.metrics import f1_score, pairwise_distances
@@ -10,74 +10,13 @@ from famus.logging import logger
 from famus.model import MLP
 from famus.sdf import SparseDataFrame, load
 from famus.utils import even_split
-from famus.model import load_from_state
 
 try:
     import torch
-    from torch import cdist
 except ImportError:
     logger.warning(
         "PyTorch is not installed. Please install PyTorch to use the classification module."
     )
-
-
-def update_unknown_labels(
-    sdf: SparseDataFrame,
-    threshold: float,
-    model: MLP,
-    device,
-    n_processes,
-    chunksize,
-    embeddings_path: str | None = None,
-) -> SparseDataFrame:
-    """
-    Updates the labels of unknown samples in the given SparseDataFrame.
-    This function identifies samples labeled as "unknown", checks their embeddings' nearest neighbor,
-    and updates their labels based on the nearest neighbor's label if the distance is below the threshold.
-    If the distance is above the threshold, the sample remains labeled as "unknown".
-    """
-    embeddings = get_embeddings(
-        sdf,
-        model=model,
-        embeddings_path=embeddings_path,
-        device=device,
-        chunksize=chunksize,
-    )
-    labeled_samples_labels = [
-        sdf.labels[k] for k in sdf.index_ids if "unknown" not in sdf.labels[k]
-    ]  # labels of known samples in the same order as the embeddings. It's length is the same as the length of labeled_embeddings
-    unknown_sample_indices = [
-        i for i, labels in enumerate(sdf.labels.values()) if "unknown" in labels
-    ]  # indices of unknown samples in the same order as the embeddings
-    known_sample_indices = [
-        i
-        for i, sample_index_ids in enumerate(sdf.index_ids)
-        if "unknown" not in sdf.labels[sample_index_ids]
-    ]  # indices of known samples in the same order as the embeddings
-    unknown_sdf = sdf._keep_indices(unknown_sample_indices)
-
-    unknown_embeddings = embeddings[unknown_sample_indices]
-    labeled_embeddings = embeddings[known_sample_indices]
-    logger.info("Calculating distances between unknown and labeled samples")
-    closest_distances, closest_indices = get_closest_distances_and_indices(
-        labeled_embeddings,
-        unknown_embeddings,
-        device=device,
-        n_processes=n_processes,
-    )
-    passed_indices = np.where(closest_distances < threshold)[0]
-    logger.info(
-        f"Found {len(passed_indices)} / {len(unknown_sdf)} unknown samples with distances below the threshold of {threshold}"
-    )
-    for i, (closest_distance, closest_index) in enumerate(
-        zip(closest_distances, closest_indices)
-    ):
-        if closest_distance < threshold:
-            unknown_sdf.labels[unknown_sdf.index_ids[i]] = labeled_samples_labels[
-                closest_index
-            ]
-    logger.info("Finished updating unknown labels in SparseDataFrame")
-    return sdf
 
 
 def load_sparse_dataframes(
@@ -100,25 +39,6 @@ def load_sparse_dataframes(
     return sdf_train, sdf_classify
 
 
-def _min_dist_ind(
-    embeddings_a,
-    embeddings_b,
-    device,
-    n_processes,
-) -> Tuple[np.ndarray, np.ndarray]:
-    if device == "cpu":
-        a_b_distances = pairwise_distances(
-            embeddings_a.cpu().numpy(), embeddings_b.cpu().numpy(), n_jobs=n_processes
-        )
-        a_b_distances = torch.tensor(a_b_distances, dtype=torch.float32)
-    else:
-        a_b_distances = cdist(embeddings_a, embeddings_b)
-
-    min_distances, min_indices = torch.min(a_b_distances, dim=1)
-    output = min_distances.cpu().numpy(), min_indices.cpu().numpy()
-    return output
-
-
 def _calc_embeddings(sdf, model: MLP, device: Any, chunksize, n_processes):
     logger.info("Calculating embeddings from scratch")
     chunksize = min(chunksize, len(sdf))
@@ -136,7 +56,7 @@ def _calc_embeddings(sdf, model: MLP, device: Any, chunksize, n_processes):
             chunk_tensor = torch.tensor(
                 chunk, requires_grad=False, dtype=torch.float32
             ).to(device)
-            embeddings.append(model.forward_once(chunk_tensor).cpu().numpy())
+            embeddings.append(model(chunk_tensor).cpu().numpy())
             del chunk_tensor
 
     # return a numpy array of the embeddings
@@ -195,9 +115,9 @@ def calculate_threshold(
     logger.info("device: " + str(device))
     logger.info("Loading model")
 
-    snn_model: MLP = load_from_state(model_path, device=device)
-    snn_model.eval()
-    snn_model.to(device)
+    model = MLP.load_from_state(model_path, device=device)
+    model.eval()
+    model.to(device)
     logger.info("Loading dataframes")
     if load_sdf_from_pickle:
         with open(sdf_train_path, "rb") as f:
@@ -208,7 +128,7 @@ def calculate_threshold(
     logger.info("Calculating threshold")
     threshold = calc_thresh(
         sdf_train=sdf_train,
-        model=snn_model,
+        model=model,
         train_embeddings_path=train_embeddings_path,
         device=device,
         chunksize=chunksize,
@@ -227,9 +147,39 @@ def calc_thresh(
 ) -> None:
     """
     Generates a distance threshold for classification.
+    Assumes there are at least a few thousand labeled and unlabeled points in sdf_train.
     """
     model.eval()
+    logger.info("Balancing labeled and unknown samples in training set")
+    unlabeled_indices, singly_labeled_indices = [], []
+    for i, index_id in enumerate(sdf_train.index_ids):
+        if len(sdf_train.labels[index_id]) > 1:
+            continue
+        if sdf_train.labels[index_id][0] == "unknown":
+            unlabeled_indices.append(i)
+        else:
+            singly_labeled_indices.append(i)
 
+    n_unlabeled = len(unlabeled_indices)
+    n_labeled = len(singly_labeled_indices)
+
+    if n_unlabeled > n_labeled:
+        sampled_labeled_indices = np.random.choice(
+            singly_labeled_indices, size=n_unlabeled, replace=True
+        ).tolist()
+        balanced_indices = set(unlabeled_indices + sampled_labeled_indices)
+        mask = np.array(
+            [i in balanced_indices for i in range(len(sdf_train))], dtype=bool
+        )
+    else:
+        sampled_unlabeled_indices = np.random.choice(
+            unlabeled_indices, size=n_labeled, replace=True
+        ).tolist()
+        balanced_indices = set(sampled_unlabeled_indices + singly_labeled_indices)
+        mask = np.array(
+            [i in balanced_indices for i in range(len(sdf_train))], dtype=bool
+        )
+    sdf_train = sdf_train._keep_indices(mask)
     logger.info("Getting embeddings")
     train_embeddings = get_embeddings(
         sdf_train,
@@ -264,25 +214,24 @@ def calc_thresh(
             chunksize=chunksize,
         )
 
-        y_pred = [train_labels[k] for k in closest_indices]
+        y_pred = np.array([train_labels[k] for k in closest_indices])
 
-        ground_truth = [labels[k] for k in sdf_train.index_ids[test_indices]]
-
-        for i, preds_array in enumerate(y_pred):
-            curr_ground_truth_array = ground_truth[i]
-            if (len(curr_ground_truth_array) > 1 or len(preds_array) > 1) and len(
-                set(preds_array) & set(curr_ground_truth_array)
-            ) > 0:
-                y_pred[i] = curr_ground_truth_array[0]
-            else:
-                y_pred[i] = preds_array[0]
-            ground_truth[i] = curr_ground_truth_array[0]
-        y_true, y_pred = np.array(ground_truth), np.array(y_pred)
+        y_true = np.array([labels[k] for k in sdf_train.index_ids[test_indices]])
 
         max_f = 0
         best_thresh = 0
-        for i in range(50, 1, -1):
+        for i in range(200, 0, -1):
             thresh = i / 100
+            logger.debug("Current threshold: " + str(thresh))
+            y_pred[closest_distances >= thresh] = "unknown"
+
+            weighted_f1 = f1_score(y_true, y_pred, average="weighted", zero_division=0)
+            logger.debug("weighted fscore: " + str(weighted_f1))
+            if weighted_f1 > max_f:
+                max_f = weighted_f1
+                best_thresh = thresh
+        for i in range(99, 0, -1):
+            thresh = i / 1000
             logger.debug("Current threshold: " + str(thresh))
             y_pred[closest_distances >= thresh] = "unknown"
 
@@ -295,7 +244,7 @@ def calc_thresh(
         max_thresholds.append(best_thresh)
     avg_max_f1_score = np.mean(max_f1_scores)
     avg_threshold = np.mean(max_thresholds)
-    logger.debug("average labelled/unknown fscore: " + str(avg_max_f1_score))
+    logger.debug("average fscore: " + str(avg_max_f1_score))
     logger.info("selected threshold: " + str(avg_threshold))
     return avg_threshold
 
@@ -329,9 +278,9 @@ def classify(
     logger.info("device: " + str(device))
     logger.info("Loading model")
 
-    snn_model: MLP = load_from_state(model_path, device=device)
-    snn_model.to(device)
-    snn_model.eval()
+    model = MLP.load_from_state(model_path, device=device)
+    model.to(device)
+    model.eval()
     sdf_train: SparseDataFrame
     sdf_classify: SparseDataFrame
     logger.info("Loading dataframes")
@@ -342,7 +291,7 @@ def classify(
     if threshold == "bootstrap":
         threshold = calc_thresh(
             sdf_train=sdf_train,
-            model=snn_model,
+            model=model,
             train_embeddings_path=train_embeddings_path,
             device=device,
             chunksize=chunksize,
@@ -361,7 +310,7 @@ def classify(
     logger.info("Getting embeddings")
     train_embeddings = get_embeddings(
         sdf=sdf_train,
-        model=snn_model,
+        model=model,
         embeddings_path=train_embeddings_path,
         device=device,
         chunksize=chunksize,
@@ -370,19 +319,20 @@ def classify(
     )
     classifiy_embeddings = get_embeddings(
         sdf=sdf_classify,
-        model=snn_model,
+        model=model,
         embeddings_path=classification_embeddings_path,
         device=device,
         chunksize=chunksize,
         use_saved_embeddings=False,
         n_processes=n_processes,
     )
-
+    logger.debug("Train embeddings shape: " + str(train_embeddings.shape))
+    logger.debug("Classify embeddings shape: " + str(classifiy_embeddings.shape))
     train_data_labels = sdf_train.labels
     train_data_labels = [sdf_train.labels[k] for k in sdf_train.index_ids]
     train_data_labels = [";".join(labels) for labels in train_data_labels]
     train_data_labels = np.array(train_data_labels, dtype="object")
-
+    logger.debug("Train data labels shape: " + str(train_data_labels.shape))
     closest_distances, closest_indices = get_closest_distances_and_indices(
         train_embeddings, classifiy_embeddings, device, n_processes, chunksize=chunksize
     )
@@ -397,225 +347,118 @@ def classify(
 
 
 def get_closest_distances_and_indices(
-    train_embeddings, classifiy_embeddings, device, n_processes, chunksize
-):
-    closest_distances = np.array([], dtype=float)
-    closest_indices = np.array([], dtype=int)
-    num_chunks = int(np.ceil(len(classifiy_embeddings) / chunksize))
-    logger.debug("Starting closest distance calculations")
-    with torch.no_grad():
-        for i, classify_chunk in enumerate(
-            embedding_chunk_iterator(classifiy_embeddings, chunksize, "classify")
-        ):
-            logger.debug(f"Processing classify chunk {i + 1} / {num_chunks}")
-            classify_chunk.to(device)
-
-            curr_closest_distances = np.array(
-                [np.inf for _ in range(len(classify_chunk))]
-            )
-            curr_closest_indices = np.array([0 for _ in range(len(classify_chunk))])
-            indices_offset = 0
-            for j, train_chunk in enumerate(
-                embedding_chunk_iterator(train_embeddings, chunksize, "train")
-            ):
-                train_chunk.to(device)
-
-                min_distances, min_indices = _min_dist_ind(
-                    classify_chunk, train_chunk, device, n_processes
-                )
-                min_indices = min_indices + indices_offset
-                is_below_curr_closest_distance = min_distances < curr_closest_distances
-                curr_closest_distances[is_below_curr_closest_distance] = min_distances[
-                    is_below_curr_closest_distance
-                ]
-                curr_closest_indices[is_below_curr_closest_distance] = min_indices[
-                    is_below_curr_closest_distance
-                ]
-                indices_offset += len(train_chunk)
-                del train_chunk
-                if device.type == "cuda":
-                    torch.cuda.empty_cache()
-            del classify_chunk
-
-            closest_distances = np.concatenate(
-                (closest_distances, curr_closest_distances)
-            )
-            closest_indices = np.concatenate((closest_indices, curr_closest_indices))
-    return closest_distances, closest_indices
-
-
-def embedding_chunk_iterator(embeddings, chunksize, name=""):
-    num_chunks = int(np.ceil(len(embeddings) / chunksize))
-    if name:
-        name += " "
-    for i in range(num_chunks):
-        yield embeddings[i * chunksize : min((i + 1) * chunksize, len(embeddings))]
-
-
-def get_nearest_neighbors_and_distances(
-    target_embeddings,
-    query_embeddings,
-    threshold,
-    device,
-    n_processes,
-    chunksize,
+    train_embeddings, classify_embeddings, device, n_processes, chunksize
 ):
     """
-    For each query embedding, finds all target embeddings within the threshold distance.
-
-    Args:
-        target_embeddings: Embeddings to search in (the "database")
-        query_embeddings: Embeddings to find neighbors for
-        threshold: Maximum distance for neighbors
-        device: Device to use for computation
-        n_processes: Number of processes for CPU computation
-        chunksize: Size of chunks for processing
-
+    For each embedding in classify_embeddings, finds the closest embedding in train_embeddings.
+    closest_distances[i] is the distance between classify_embeddings[i] and its closest embedding in train_embeddings.
+    closest_indices[i] is the index of the closest embedding in train_embeddings to classify_embeddings[i].
     Returns:
-        neighbor_indices: List of arrays, where neighbor_indices[i] contains indices of
-                         all target embeddings within threshold of query i
-        neighbor_distances: List of arrays, where neighbor_distances[i] contains distances
-                           of all target embeddings within threshold of query i
-    """
-    neighbor_indices = []
-    neighbor_distances = []
+        closest_distances: np.ndarray of shape (len(classify_embeddings),)
+        closest_indices: np.ndarray of shape (len(classify_embeddings),)
 
+    """
+    if device.type == "cpu":
+        return _get_closest_cpu(
+            train_embeddings, classify_embeddings, n_processes, chunksize
+        )
+
+    # GPU optimized version
+    classify_chunksize = chunksize * 5
+    train_chunksize = chunksize
+
+    n_classify = len(classify_embeddings)
+    closest_distances = torch.full(
+        (n_classify,), float("inf"), device=device, dtype=torch.float32
+    )
+    closest_indices = torch.zeros(n_classify, dtype=torch.long, device=device)
+
+    classify_offset = 0
+    i = 0
+    num_classify_chunks = int(np.ceil(len(classify_embeddings) / classify_chunksize))
     with torch.no_grad():
-        for i, query_chunk in enumerate(
-            embedding_chunk_iterator(query_embeddings, chunksize, "query")
-        ):
-            query_chunk = query_chunk.to(device)
+        for classify_chunk in _chunks(classify_embeddings, classify_chunksize):
+            logger.debug(f"get closest: classify chunk {i + 1} / {num_classify_chunks}")
+            chunk_size = len(classify_chunk)
+            classify_chunk = classify_chunk.to(device)
+            chunk_min_dists = torch.full(
+                (chunk_size,), float("inf"), device=device, dtype=torch.float32
+            )
+            chunk_min_indices = torch.zeros(chunk_size, dtype=torch.long, device=device)
 
-            # For each query in this chunk, collect all neighbors within threshold
-            chunk_neighbor_indices = [[] for _ in range(len(query_chunk))]
-            chunk_neighbor_distances = [[] for _ in range(len(query_chunk))]
+            train_offset = 0
+            for train_chunk in _chunks(train_embeddings, train_chunksize):
+                train_chunk = train_chunk.to(device)
+                distances = torch.cdist(classify_chunk, train_chunk)
+                min_dists, min_idxs = torch.min(distances, dim=1)
+                min_idxs = min_idxs + train_offset
+                mask = min_dists < chunk_min_dists
+                chunk_min_dists = torch.where(mask, min_dists, chunk_min_dists)
+                chunk_min_indices = torch.where(mask, min_idxs, chunk_min_indices)
+                train_offset += len(train_chunk)
 
-            target_indices_offset = 0
-            for j, target_chunk in enumerate(
-                embedding_chunk_iterator(target_embeddings, chunksize, "target")
-            ):
-                target_chunk = target_chunk.to(device)
+            closest_distances[classify_offset : classify_offset + chunk_size] = (
+                chunk_min_dists
+            )
+            closest_indices[classify_offset : classify_offset + chunk_size] = (
+                chunk_min_indices
+            )
 
-                # Compute all pairwise distances between query_chunk and target_chunk
-                if device == "cpu":
-                    distances = pairwise_distances(
-                        query_chunk.cpu().numpy(),
-                        target_chunk.cpu().numpy(),
-                        n_jobs=n_processes,
-                    )
-                    distances = torch.tensor(distances, dtype=torch.float32)
-                else:
-                    distances = cdist(query_chunk, target_chunk)
+            classify_offset += chunk_size
+            i += 1
 
-                # For each query in the chunk, find targets within threshold
-                for query_idx in range(len(query_chunk)):
-                    query_distances = distances[query_idx]
-                    within_threshold_mask = query_distances < threshold
-
-                    if torch.any(within_threshold_mask):
-                        # Get indices and distances of neighbors within threshold
-                        local_target_indices = torch.where(within_threshold_mask)[0]
-                        global_target_indices = (
-                            local_target_indices + target_indices_offset
-                        )
-                        corresponding_distances = query_distances[within_threshold_mask]
-
-                        # Add to the lists for this query
-                        chunk_neighbor_indices[query_idx].extend(
-                            global_target_indices.cpu().numpy()
-                        )
-                        chunk_neighbor_distances[query_idx].extend(
-                            corresponding_distances.cpu().numpy()
-                        )
-
-                target_indices_offset += len(target_chunk)
-
-            # Convert lists to numpy arrays for each query in the chunk
-            for query_idx in range(len(query_chunk)):
-                neighbor_indices.append(
-                    np.array(chunk_neighbor_indices[query_idx], dtype=int)
-                )
-                neighbor_distances.append(
-                    np.array(chunk_neighbor_distances[query_idx], dtype=float)
-                )
-
-    return neighbor_indices, neighbor_distances
+    return closest_distances.cpu().numpy(), closest_indices.cpu().numpy()
 
 
-def get_nearest_neighbors_and_distances_optimized(
-    target_embeddings,
-    query_embeddings,
-    threshold,
-    device,
-    n_processes,
-    chunksize,
-):
-    """
-    Optimized version that processes the threshold filtering more efficiently.
-    This version is better for cases where you expect many neighbors within threshold.
-    """
-    neighbor_indices = []
-    neighbor_distances = []
+def _chunks(tensor, chunk_size):
+    """Generator for tensor chunks"""
+    for i in range(0, len(tensor), chunk_size):
+        yield tensor[i : i + chunk_size]
 
-    with torch.no_grad():
-        for i, query_chunk in enumerate(
-            embedding_chunk_iterator(query_embeddings, chunksize, "query")
-        ):
-            query_chunk = query_chunk.to(device)
 
-            # Initialize result containers for this chunk
-            chunksize = len(query_chunk)
-            chunk_neighbor_indices = [[] for _ in range(chunksize)]
-            chunk_neighbor_distances = [[] for _ in range(chunksize)]
+def _get_closest_cpu(train_embeddings, classify_embeddings, n_processes, chunksize):
+    train_np = (
+        train_embeddings.numpy()
+        if torch.is_tensor(train_embeddings)
+        else train_embeddings
+    )
+    classify_np = (
+        classify_embeddings.numpy()
+        if torch.is_tensor(classify_embeddings)
+        else classify_embeddings
+    )
 
-            target_indices_offset = 0
-            for j, target_chunk in enumerate(
-                embedding_chunk_iterator(target_embeddings, chunksize, "target")
-            ):
-                target_chunk = target_chunk.to(device)
+    n_classify = len(classify_np)
+    closest_distances = np.full(n_classify, np.inf, dtype=np.float32)
+    closest_indices = np.zeros(n_classify, dtype=np.int64)
+    num_classify_chunks = int(np.ceil(n_classify / chunksize))
+    num_train_chunks = int(np.ceil(len(train_np) / chunksize))
+    chunk_count = 0
+    for i in range(0, n_classify, chunksize):
+        chunk_count += 1
+        classify_chunk = classify_np[i : i + chunksize]
+        logger.debug(
+            f"get closest: classify chunk {chunk_count} / {num_classify_chunks}"
+        )
+        train_chunk_count = 0
+        for j in range(0, len(train_np), chunksize):
+            train_chunk_count += 1
+            logger.debug(
+                f"get closest: train chunk {train_chunk_count} / {num_train_chunks}"
+            )
+            train_chunk = train_np[j : j + chunksize]
 
-                # Compute distances
-                if device == "cpu":
-                    distances = pairwise_distances(
-                        query_chunk.cpu().numpy(),
-                        target_chunk.cpu().numpy(),
-                        n_jobs=n_processes,
-                    )
-                    distances = torch.tensor(
-                        distances, dtype=torch.float32, device=device
-                    )
-                else:
-                    distances = cdist(query_chunk, target_chunk)
+            distances = pairwise_distances(
+                classify_chunk, train_chunk, n_jobs=n_processes
+            )
 
-                # Find all pairs within threshold using vectorized operations
-                within_threshold_mask = distances < threshold
-                query_indices, target_indices = torch.where(within_threshold_mask)
+            min_idxs = np.argmin(distances, axis=1)
+            min_dists = distances[np.arange(len(distances)), min_idxs]
+            min_idxs = min_idxs + j
 
-                if len(query_indices) > 0:
-                    # Get the actual distances for the pairs within threshold
-                    threshold_distances = distances[within_threshold_mask]
+            # Update minimums
+            mask = min_dists < closest_distances[i : i + len(classify_chunk)]
+            closest_distances[i : i + len(classify_chunk)][mask] = min_dists[mask]
+            closest_indices[i : i + len(classify_chunk)][mask] = min_idxs[mask]
 
-                    # Adjust target indices to global indices
-                    global_target_indices = target_indices + target_indices_offset
-
-                    # Group by query index
-                    for qi, ti, dist in zip(
-                        query_indices.cpu().numpy(),
-                        global_target_indices.cpu().numpy(),
-                        threshold_distances.cpu().numpy(),
-                    ):
-                        chunk_neighbor_indices[qi].append(ti)
-                        chunk_neighbor_distances[qi].append(dist)
-
-                target_indices_offset += len(target_chunk)
-
-            # Convert to numpy arrays
-            for query_idx in range(chunksize):
-                neighbor_indices.append(
-                    np.array(chunk_neighbor_indices[query_idx], dtype=int)
-                )
-                neighbor_distances.append(
-                    np.array(chunk_neighbor_distances[query_idx], dtype=float)
-                )
-
-    return neighbor_indices, neighbor_distances
+    return closest_distances, closest_indices

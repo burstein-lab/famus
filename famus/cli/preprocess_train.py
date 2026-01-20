@@ -1,11 +1,9 @@
-import argparse
 import os
 
 import yaml
 
 from famus import data_preprocessing as dp
 from famus.logging import logger
-from famus.sdfloader import prepare_sdfloader
 
 
 def main(
@@ -128,7 +126,6 @@ def main(
             "split_hmmsearch_results": None,
             "ground_truth": None,
             "sdf_train": None,
-            "sdfloader": None,
         }
         yaml.dump(
             state,
@@ -345,7 +342,7 @@ def main(
     if not state["sdf_train"] or not skip:
         logger.info("Creating sparse dataframe for training")
 
-        sdf_train_path = os.path.join(data_dir_path, "sdf_train.json")
+        sdf_train_path = os.path.join(data_dir_path, "sdf_train.pkl")
         skip = False
         dp.hmmsearch_results_to_train_sdf(
             input_split_hmmsearch_results_path=split_hmmsearch_results_path,
@@ -355,26 +352,11 @@ def main(
             input_all_sequences_fasta_path=full_hmmsearch_input,
             input_ground_truth_path=ground_truth_path,
             output_sdf_path=sdf_train_path,
+            save_as_pickle=True,
         )
         state["sdf_train"] = sdf_train_path
         yaml.dump(state, open(state_file_path, "w+"))
     else:
         sdf_train_path = state["sdf_train"]
-
-    if not state["sdfloader"] or not skip:
-        logger.info("Creating sdfloader")
-        skip = False
-        sdfloader_path = os.path.join(data_dir_path, "sdfloader.pkl")
-        prepare_sdfloader(
-            sdf_train_path=sdf_train_path,
-            n_processes=n_processes,
-            triplets_per_class=3000,
-            output_path=sdfloader_path,
-            load_stack_size=100000,
-        )
-        state["sdfloader"] = sdfloader_path
-        yaml.dump(state, open(state_file_path, "w+"))
-    else:
-        sdfloader_path = state["sdfloader"]
 
     logger.info("Finished preprocessing")

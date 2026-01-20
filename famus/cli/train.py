@@ -24,7 +24,7 @@ def main():
         epilog=f"""
 Example usage:
 
-  # {prog} --unknown-sequences-fasta-path examples/unknowns.fasta --log-dir logs/ --n-processes 32 --models-dir models/ --save-every 100_000 --device cpu --num-epochs 20 --batch-size 32 --create-subclusters examples/example_orthologs/
+  # {prog} --unknown-sequences-fasta-path examples/unknowns.fasta --log-dir logs/ --n-processes 32 --models-dir models/ --device cpu --num-epochs 20 --batch-size 32 --create-subclusters examples/example_orthologs/
 
   Full description of arguments can be found at https://github.com/burstein-lab/famus
         """,
@@ -56,19 +56,14 @@ Example usage:
         help=f"Number of epochs to train the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_NUM_EPOCHS}]",
     )
     parser.add_argument(
-        "--batch-size",
+        "--batches-per-epoch",
         type=int,
-        help=f"Batch size for training the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_BATCH_SIZE}]",
+        help=f"Number of batches per epoch to train the model. If not specified, will use cfg.yaml parameter. [{config.DEFAULT_BATCHES_PER_EPOCH}]",
     )
     parser.add_argument(
         "--stop-before-training",
         action="store_true",
         help=f"Stop right before training the model. Useful for running preprocess and train separately. [{config.DEFAULT_STOP_BEFORE_TRAINING}]",
-    )
-    parser.add_argument(
-        "--save-every",
-        type=int,
-        help=f"Number of batches after which to save a checkpoint. [{config.DEFAULT_SAVE_EVERY_BATCHES}]",
     )
     parser.add_argument(
         "--mmseqs-n-processes",
@@ -123,6 +118,16 @@ Example usage:
         type=str,
         help=f"Path to file containing Weights & Biases API key to use if logging to wandb. [{config.DEFAULT_WANDB_API_KEY_PATH}]",
     )
+    parser.add_argument(
+        "--overwrite-checkpoint",
+        action="store_true",
+        help=f"Whether to overwrite existing checkpoints during training if they exist. [{config.DEFAULT_OVERWRITE_CHECKPOINT}]",
+    )
+    parser.add_argument(
+        "--continue-from-checkpoint",
+        action="store_true",
+        help=f"Whether to continue training from the latest checkpoint if it exists. [{config.DEFAULT_CONTINUE_FROM_CHECKPOINT}]",
+    )
 
     args = parser.parse_args()
     cfg_file_path = args.config
@@ -135,10 +140,8 @@ Example usage:
     input_fasta_dir_path = args.input_fasta_dir_path
     n_processes = args.n_processes or cfg["n_processes"]
     num_epochs = args.num_epochs or cfg["num_epochs"]
-    batch_size = args.batch_size or cfg["batch_size"]
     device = args.device or cfg["device"]
     chunksize = args.chunksize or cfg["chunksize"]
-    save_every = args.save_every or cfg["save_every"]
     models_dir = args.models_dir or cfg["models_dir"]
     mmseqs_n_processes = args.mmseqs_n_processes or cfg["mmseqs_n_processes"]
     sampled_sequences_per_subcluster = (
@@ -265,7 +268,6 @@ Example usage:
     if stop_before_training:
         logger.info("stop_before_training set to True. Stopping before training.")
         return
-    sdfloader_path = os.path.join(data_dir_path, "sdfloader.pkl")
     checkpoints_dir_path = os.path.join(model_path, "checkpoints/")
     os.makedirs(checkpoints_dir_path, exist_ok=True)
     output_path = os.path.join(model_path, "state.pt")
@@ -280,31 +282,45 @@ Example usage:
         if args.wandb_api_key_path is not None
         else cfg["wandb_api_key_path"]
     )
+    overwrite_checkpoint = args.overwrite_checkpoint or cfg["overwrite_checkpoint"]
+    continue_from_checkpoint = (
+        args.continue_from_checkpoint or cfg["continue_from_checkpoint"]
+    )
+    batches_per_epoch = args.batches_per_epoch or cfg["batches_per_epoch"]
     train(
-        sdfloader_path=sdfloader_path,
-        output_path=output_path,
-        device=device,
+        sdf_path=os.path.join(data_dir_path, "sdf_train.pkl"),
+        checkpoint_dir=checkpoints_dir_path,
+        model_output_path=output_path,
+        seed=42,
+        embedding_dim=320,
+        hidden_dims=None,
+        temperature=0.25,
+        p_labels=16,
+        k_per_label=8,
+        n_negatives=64 if unknown_sequences_fasta_path is not None else 0,
+        label_sampling_strategy="uniform",
+        sampling_temperature=1.0,
         num_epochs=num_epochs,
-        batch_size=batch_size,
-        save_checkpoints=True,
-        checkpoint_dir_path=checkpoints_dir_path,
-        evaluation=True,
-        save_every=save_every,
-        lr=0.001,
-        n_processes=n_processes,
-        log_to_wandb=log_to_wandb,
+        batches_per_epoch=batches_per_epoch,
+        learning_rate=1e-5,
+        log_metrics_every=100,
+        val_eval_every=2000,
+        device=device,
+        use_wandb=log_to_wandb,
         wandb_project=wandb_project,
         wandb_api_key_path=wandb_api_key_path,
+        overwrite_checkpoint=overwrite_checkpoint,
+        continue_from_checkpoint=continue_from_checkpoint,
     )
-
     if not os.path.exists(os.path.join(model_path, "env")):
         threshold = calculate_threshold(
-            sdf_train_path=data_dir_path + "sdf_train.json",
+            sdf_train_path=os.path.join(data_dir_path, "sdf_train.pkl"),
             model_path=output_path,
-            train_embeddings_path=data_dir_path + "train_embeddings.pkl",
+            train_embeddings_path=os.path.join(data_dir_path, "train_embeddings.npy"),
             device=device,
             chunksize=chunksize,
             n_processes=n_processes,
+            load_sdf_from_pickle=True,
         )
         with open(os.path.join(model_path, "env"), "w") as f:
             f.write(str(f"THRESHOLD={threshold}"))
