@@ -21,16 +21,7 @@ except ImportError:
     )
 
 
-def _require_torch():
-    if not TORCH_AVAILABLE:
-        raise ImportError(
-            "\n" + "=" * 70 + "\nPyTorch is required to use FAMUS models!\n\n"
-        )
-
-
 class MLP(nn.Module):
-    _require_torch()
-
     def __init__(
         self, input_dim: int, embedding_dim: int = 128, hidden_dims: List[int] = None
     ):
