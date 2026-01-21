@@ -6,14 +6,20 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
 from scipy.sparse import csr_matrix
 
-import wandb
 from famus.logging import logger
 from famus.model import MLP
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+except ImportError:
+    logger.warning(
+        "PyTorch is not installed. Please install PyTorch to use the training module."
+    )
+    from famus.model import nn  # imports dummy nn.Module class
 
 
 class SDFDataset:
@@ -501,7 +507,7 @@ def _train(
     log_metrics_every: int = 100,
     val_eval_every: int = 2000,
     checkpoint_dir: str = "checkpoints",
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    device: str = "cuda",
     use_wandb: bool = False,
     wandb_project: str = "embedding_training",
     overwrite_checkpoint: bool = False,
@@ -559,8 +565,10 @@ def _train(
     logger.debug(f"  Validation: {len(val_batch)} samples")
 
     if use_wandb:
+        import wandb
+
         try:
-            with open("wandb_api_key.txt", "r") as f:
+            with open(wandb_api_key_path, "r") as f:
                 wandb.login(key=f.read().strip())
         except:
             logger.warning("Could not load wandb API key, attempting anonymous login")
@@ -759,7 +767,7 @@ def train(
     checkpoint_dir: str,
     model_output_path: str,
     seed: int = 42,
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    device: str = "cuda",
     embedding_dim: int = 320,
     hidden_dims: Optional[List[int]] = None,
     temperature: float = 0.25,
