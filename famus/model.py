@@ -51,6 +51,9 @@ class MLP(nn.Module):
         # L2 normalization can help stabilize training
         return nn.functional.normalize(embedding, p=2, dim=1)
 
+    def save_state(self, path: str):
+        torch.save({"model_state_dict": self.state_dict()}, path)
+
     @staticmethod
     def load_from_state(state_path, device=None):
         state = torch.load(state_path, map_location=device, weights_only=False)

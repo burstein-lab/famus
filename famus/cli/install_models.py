@@ -12,7 +12,7 @@ from famus.logging import setup_logger, logger
 from .common import get_common_parser
 from famus import config
 
-ZENODO_BASE = "https://zenodo.org/records/14941374/files"
+ZENODO_BASE = "https://zenodo.org/records/18339176/files"
 
 AVAILABLE_MODELS = ["kegg", "orthodb", "interpro", "eggnog"]
 AVAILABLE_TYPES = ["comprehensive", "light"]
@@ -20,14 +20,14 @@ AVAILABLE_TYPES = ["comprehensive", "light"]
 TYPE_MAP = {"comprehensive": "full", "light": "light"}
 
 MODEL_TO_THRESHOLD = {
-    "kegg_comprehensive": 0.19,
-    "kegg_light": 0.19,
-    "orthodb_comprehensive": 0.19,
-    "orthodb_light": 0.19,
-    "interpro_comprehensive": 0.34,
-    "interpro_light": 0.35,
-    "eggnog_comprehensive": 0.19,
-    "eggnog_light": 0.19,
+    "kegg_comprehensive": 0.2533,
+    "kegg_light": 0.2833,
+    "orthodb_comprehensive": 0.27,
+    "orthodb_light": 0.3033,
+    "interpro_comprehensive": 0.3233,
+    "interpro_light": 0.38,
+    "eggnog_comprehensive": 0.2433,
+    "eggnog_light": 0.2667,
 }
 
 

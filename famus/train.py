@@ -375,6 +375,82 @@ class SupervisedContrastiveLoss(nn.Module):
         return torch.stack(losses).mean()
 
 
+class SupervisedContrastiveLossOriginal(nn.Module):
+    """
+    Original paper version that evaluates each positive separately.
+    """
+
+    def __init__(self, temperature: float = 0.07):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, embeddings, indices, dataset):
+        batch_size = embeddings.size(0)
+        device = embeddings.device
+
+        # Build label matrix
+        label_matrix = torch.zeros(
+            batch_size, batch_size, dtype=torch.bool, device=device
+        )
+        has_unknown = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+        for i, idx_i in enumerate(indices):
+            labels_i = dataset.get_labels(idx_i)
+            is_unknown_i = len(labels_i) == 1 and "unknown" in labels_i
+            has_unknown[i] = is_unknown_i
+
+            if not is_unknown_i:
+                for j, idx_j in enumerate(indices):
+                    if i != j:
+                        labels_j = dataset.get_labels(idx_j)
+                        is_unknown_j = len(labels_j) == 1 and "unknown" in labels_j
+
+                        if (
+                            not is_unknown_j
+                            and len(labels_i.intersection(labels_j)) > 0
+                        ):
+                            label_matrix[i, j] = True
+
+        # Compute similarity
+        similarity = torch.matmul(embeddings, embeddings.T) / self.temperature
+        mask_self = torch.eye(batch_size, dtype=torch.bool, device=device)
+        similarity = similarity.masked_fill(mask_self, -float("inf"))
+
+        losses = []
+
+        for i in range(batch_size):
+            if has_unknown[i]:
+                continue
+
+            positives_mask = label_matrix[i] & ~has_unknown
+            if not positives_mask.any():
+                continue
+
+            negatives_mask = ~label_matrix[i] | has_unknown
+            negatives_mask[i] = False
+
+            if not negatives_mask.any():
+                continue
+
+            pos_sims = similarity[i][positives_mask]
+            all_sims = similarity[i][positives_mask | negatives_mask]
+
+            # Compute denominator once (sum over all)
+            all_log_sum = torch.logsumexp(all_sims, dim=0)
+
+            # Sum OUTSIDE the log - evaluate each positive separately
+            for pos_sim in pos_sims:
+                # Loss for this specific positive
+                loss_per_positive = -(pos_sim - all_log_sum)
+                losses.append(loss_per_positive)
+
+        if len(losses) == 0:
+            return torch.tensor(0.0, device=device, requires_grad=True)
+
+        # Average over ALL positive pairs (not per anchor)
+        return torch.stack(losses).mean()
+
+
 def compute_distance_metrics(embeddings, indices, dataset, device):
     batch_size = embeddings.size(0)
 
