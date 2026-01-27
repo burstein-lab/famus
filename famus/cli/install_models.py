@@ -12,7 +12,7 @@ from famus.logging import setup_logger, logger
 from .common import get_common_parser
 from famus import config
 
-ZENODO_BASE = "https://zenodo.org/records/18339176/files"
+ZENODO_BASE = "https://zenodo.org/records/18374224/files"
 
 AVAILABLE_MODELS = ["kegg", "orthodb", "interpro", "eggnog"]
 AVAILABLE_TYPES = ["comprehensive", "light"]
