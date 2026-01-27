@@ -6,9 +6,6 @@ from famus.classification import classify
 from famus.cli.preprocess_classify import main as preprocess
 import shutil
 
-
-import yaml
-
 from famus.logging import setup_logger
 from .common import get_common_parser
 from .common_model_args import get_common_model_args_parser
@@ -27,7 +24,7 @@ def main():
         epilog=f"""
 Example usage:
 
-  # {prog} --log-dir logs/ --n-processes 32 --device cpu --model-type comprehensive --models-dir models/ --models example_orthologs examples/example_for_classification.fasta
+  # {prog} --log-dir logs/ --n-processes 32 --device cpu --model-type comprehensive --models-dir models/ --models kegg examples/example_for_classification.fasta output/
 
   Full description of arguments can be found at https://github.com/burstein-lab/famus
         """,
@@ -44,9 +41,8 @@ Example usage:
     )
     parser.add_argument(
         "--models",
-        nargs="+",
         type=str,
-        help="Models to use for classification separated by spaces",
+        help="Models to use for classification separated by commas",
     )
     parser.add_argument(
         "--model-type",
@@ -72,12 +68,14 @@ Example usage:
     output_dir = args.output_dir
     device = args.device or cfg["device"]
     chunksize = args.chunksize or cfg["chunksize"]
-    models = args.models or cfg["models"]
+    models = args.models.split(",") if args.models else cfg["models"]
     models_type = args.model_type or cfg["model_type"]
     n_processes = args.n_processes or cfg["n_processes"]
     models_dir = args.models_dir or cfg["models_dir"]
     model_paths = [os.path.join(models_dir, models_type, model) for model in models]
-    if missing_models := [model for model in model_paths if not os.path.exists(model)]:
+    if missing_models := [
+        model_path for model_path in model_paths if not os.path.exists(model_path)
+    ]:
         raise FileNotFoundError(f"Missing models: {missing_models}")
 
     if args.load_sdf_from_pickle is None:
