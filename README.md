@@ -2,10 +2,11 @@
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/famus/README.html)
 
-FAMUS has a web interface available at https://famus-6e94e.web.app/.  
+FAMUS has a web interface available at:  
+https://app.famus.bursteinlab.org  
 
 <p align="center">
-<a href="https://famus-6e94e.web.app/"><img src="https://famus-6e94e.web.app/superfamus.svg" width="96"></a></p>
+<img src="https://famus-6e94e.web.app/superfamus.svg" width="96"></p>
 
 
 FAMUS is a SupCon (Supervised Contrastive) learning based framework that annotates protein sequences with function. Input sequences are transformed to numeric vectors with pre-trained neural networks tailored to individual protein family databases, and then compared to sequences of those databases to find the closest match.
