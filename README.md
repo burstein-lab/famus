@@ -67,8 +67,8 @@ eggnog_light
 
 To easily download pre-trained models, we provide a command line tool called `famus-install` (for conda). source code users will use the module famus.cli.install_models. This will download a large number of profile HMMs, so make sure you have enough disk space (several GBs depending on the models you download).
 
-If installed with conda, run `famus-install --models <space-separated list of model names> --models-dir <path to models directory>`. For example, to download the comprehensive KEGG and light InterPro models to famus_models, run:
-`famus-install --models kegg_comprehensive interpro_light --models-dir famus_models`. If using the source code, run `python -m famus.cli.install_models` from the root directory instead of `famus-install`. See details below for a comprehensive list of command line arguments.
+If installed with conda, run `famus-install --models <comma-separated list of model names> --models-dir <path to models directory>`. For example, to download the comprehensive KEGG and light InterPro models to famus_models, run:
+`famus-install --models kegg_comprehensive,interpro_light --models-dir famus_models`. If using the source code, run `python -m famus.cli.install_models` from the root directory instead of `famus-install`. See details below for a comprehensive list of command line arguments.
 
 Python data is downloaded as JSON for security reasons. After running this command, it is recommended (but optional) to convert the data that was downloaded as JSON to pickle format for faster data loading. This can be done by running the following command: 
  - conda: `famus-convert-sdf --models-dir <path to models directory>`

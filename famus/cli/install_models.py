@@ -209,10 +209,10 @@ def main():
 Examples:
 
   # Install specific models
-  {prog} --models kegg_comprehensive orthodb_light
+  {prog} --models kegg_comprehensive,orthodb_light
   
   # Install all comprehensive models
-  {prog} --models kegg_comprehensive orthodb_comprehensive interpro_comprehensive eggnog_comprehensive
+  {prog} --models kegg_comprehensive,orthodb_comprehensive,interpro_comprehensive,eggnog_comprehensive
   
   # Install to custom directory
   {prog} --models kegg_light --models-dir /path/to/my/models
@@ -236,9 +236,8 @@ Full description of arguments can be found at https://github.com/burstein-lab/fa
 
     parser.add_argument(
         "--models",
-        nargs="+",
         required=True,
-        help="Models to install (format: model_type, e.g., kegg_comprehensive orthodb_light)",
+        help="Models to install (format: model_type, e.g., kegg_comprehensive,orthodb_light)",
     )
 
     parser.add_argument(
@@ -270,7 +269,7 @@ Full description of arguments can be found at https://github.com/burstein-lab/fa
     logger.info(f"Download directory: {download_dir}")
     models_to_install = []
     try:
-        for model_spec in args.models:
+        for model_spec in args.models.split(","):
             model_name, model_type = parse_model_spec(model_spec)
             models_to_install.append((model_name, model_type))
     except ValueError as e:
