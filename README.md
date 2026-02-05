@@ -1,6 +1,7 @@
 # FAMUS: Functional Annotation Method Using Supervised contrastive learning
 
-[![Anaconda-Server Badge](https://anaconda.org/bioconda/famus/badges/downloads.svg)](https://anaconda.org/bioconda/famus) [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/famus/README.html)
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/famus/README.html) 
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/famus/badges/downloads.svg)](https://anaconda.org/bioconda/famus)
 
 
 FAMUS has a web interface available at:  
