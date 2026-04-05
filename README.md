@@ -7,6 +7,10 @@
 FAMUS has a web interface available at:  
 https://app.famus.bursteinlab.org  
 
+Preprint:  
+https://www.biorxiv.org/content/10.64898/2026.03.08.710366v1
+
+<hr>
 <p align="center">
 <img src="https://famus-6e94e.web.app/superfamus.svg" width="96"></p>
 
