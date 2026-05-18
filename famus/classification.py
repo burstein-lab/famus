@@ -78,6 +78,13 @@ def get_embeddings(
     if use_saved_embeddings and os.path.exists(embeddings_path):
         logger.info("Loading embeddings")
         embeddings: np.ndarray = np.load(embeddings_path)
+        if embeddings.shape[0] != len(sdf):
+            raise ValueError(
+                f"Cached embeddings at {embeddings_path} have {embeddings.shape[0]} "
+                f"rows but the SparseDataFrame has {len(sdf)} rows. The cache is stale "
+                "(the model or training SDF changed since it was written). Delete the "
+                ".npy file and recompute."
+            )
     else:
         logger.info("Calculating embeddings")
         embeddings = _calc_embeddings(sdf, model, device, chunksize, n_processes)

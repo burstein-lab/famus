@@ -1,4 +1,5 @@
 import os
+import shutil
 import pickle
 import random
 from collections import defaultdict
@@ -117,8 +118,8 @@ def create_subset_dataset(parent_dataset: SDFDataset, subset_indices: List[int])
 
 def create_train_val_split(
     dataset: SDFDataset,
-    min_samples_for_val: int = 10,
-    val_samples_per_label: int = 2,
+    min_samples_for_val: int = 15,
+    val_samples_per_label: int = 3,
     val_n_labels: int = 100,
     val_n_unknowns: int = 50,
     seed: int = 42,
@@ -141,7 +142,7 @@ def create_train_val_split(
 
     for label in dataset.valid_labels:
         n_samples = len(label_to_single_label_indices[label])
-
+        logger.debug(f"Label '{label}' has {n_samples} single-label samples")
         if n_samples >= min_samples_for_val:
             eligible_labels.append(label)
 
@@ -608,6 +609,7 @@ def _train(
 
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
     best_path = os.path.join(checkpoint_dir, "checkpoint_best.pt")
+    starting_epoch = 0
     if continue_from_checkpoint:
         checkpoint_files = list(Path(checkpoint_dir).glob("checkpoint_epoch_*.pt"))
         if len(checkpoint_files) == 0:
@@ -615,6 +617,12 @@ def _train(
         latest_checkpoint = max(
             checkpoint_files, key=lambda x: int(x.stem.split("_")[-1])
         )
+        starting_epoch = int(latest_checkpoint.stem.split("_")[-1])
+        if starting_epoch >= num_epochs:
+            logger.warning(
+                f"Latest checkpoint epoch ({starting_epoch}) is greater than or equal to total epochs ({num_epochs}). Copying best to state_dict and Returning."
+            )
+            return MLP.load_from_state(str(best_path), device=device)
 
         model = MLP.load_from_state(str(latest_checkpoint), device=device)
 
@@ -690,7 +698,7 @@ def _train(
     global_step = 0
     best_val_ratio = 0.0
 
-    for epoch in range(num_epochs):
+    for epoch in range(starting_epoch, num_epochs):
         model.train()
         epoch_loss = 0.0
         num_batches = 0
