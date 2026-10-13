@@ -29,7 +29,17 @@ To install with conda, first create a new conda environment:
 
 `conda create -n famus -c conda-forge -c bioconda famus`
 
-Activate the environment with `conda activate famus` and install the correct pytorch version for your environment from the pytorch website via pip: https://pytorch.org/get-started/locally/
+This also installs PyTorch. conda chooses the PyTorch build from the machine you run the install on: a CUDA (GPU) build if it detects an NVIDIA GPU driver, otherwise a CPU-only build.
+
+FAMUS uses the GPU by default (`--device cuda`). On machines without a GPU, or with a CPU-only build, pass `--device cpu` (or set `device: cpu` in your config file).
+
+On HPC clusters, environments are often created on a login node without a GPU, which gives a CPU-only build. To get a GPU build, either create the environment on a GPU node, or tell conda which CUDA version to target, for example:
+
+`CONDA_OVERRIDE_CUDA=12.6 conda create -n famus -c conda-forge -c bioconda famus`
+
+Use the CUDA version your GPU nodes support (the "CUDA Version" shown by `nvidia-smi` on a GPU node). To check that the GPU build works, activate the environment on a GPU node and run `python -c "import torch; print(torch.cuda.is_available())"`, which should print `True`.
+
+Activate the environment with `conda activate famus`.
 
 If you wish to use WanDB logging during training, install wandb with: `pip install wandb`.
 
