@@ -10,10 +10,14 @@ All operations are performed on the underlying matrix, so they are very fast on 
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import pickle
 import re
+import uuid
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 import numpy as np
 from scipy.sparse import csc_matrix, csr_matrix, diags
@@ -313,6 +317,106 @@ def load(path: str) -> SparseDataFrame:
         data["column_names"],
         dtype=dtype,
     )
+
+
+class TrainMetadata(NamedTuple):
+    """What classification needs from a training SparseDataFrame, without its matrix."""
+
+    column_names: list
+    row_labels: list  # each row's labels joined with ";", in row order
+
+
+def save_train_metadata(
+    sdf: SparseDataFrame, sdf_path: str, source_stat: os.stat_result | None = None
+) -> None:
+    """
+    Write the `<sdf_path>.meta` sidecar for `sdf`, the training table stored at `sdf_path`.
+    The sidecar records the table file's size and mtime (`source_stat`, default: the file as it
+    is now) so a later change to the table invalidates it. A failed write, e.g. in a read-only
+    models directory, is logged and ignored: classification then keeps loading the full table.
+    """
+    _write_train_metadata(_train_metadata_of(sdf), sdf_path, source_stat)
+
+
+def load_train_metadata(sdf_path: str, load_from_pickle: bool) -> TrainMetadata:
+    """
+    Return the column names and per-row labels of the training table at `sdf_path`.
+    Reads the small `<sdf_path>.meta` sidecar when its recorded size and mtime match the table;
+    otherwise loads the full table once and (re)writes the sidecar for later runs.
+    """
+    # Stat before reading the table: if it changes mid-read, the recorded stamp is
+    # already stale, so the next run rebuilds rather than trusting mixed content.
+    source_stat = os.stat(sdf_path)
+    meta = _read_train_metadata(sdf_path, source_stat)
+    if meta is not None:
+        return meta
+    logger.info(
+        f"Building {sdf_path}.meta from the full table (one-time; later runs read the sidecar)"
+    )
+    if load_from_pickle:
+        with open(sdf_path, "rb") as f:
+            sdf = pickle.load(f)
+    else:
+        sdf = load(sdf_path)
+    meta = _train_metadata_of(sdf)
+    _write_train_metadata(meta, sdf_path, source_stat)
+    return meta
+
+
+def _train_metadata_of(sdf: SparseDataFrame) -> TrainMetadata:
+    return TrainMetadata(
+        column_names=[str(c) for c in sdf.column_names],
+        row_labels=[";".join(sdf.labels[k]) for k in sdf.index_ids],
+    )
+
+
+def _read_train_metadata(
+    sdf_path: str, source_stat: os.stat_result
+) -> TrainMetadata | None:
+    """The sidecar's metadata if it exists, parses, and matches the table's stamp; else None."""
+    try:
+        with open(f"{sdf_path}.meta") as f:
+            data = json.load(f)
+        if (data["source_size"], data["source_mtime_ns"]) != (
+            source_stat.st_size,
+            source_stat.st_mtime_ns,
+        ):
+            return None
+        return TrainMetadata(data["column_names"], data["row_labels"])
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        logger.warning(f"Ignoring unreadable {sdf_path}.meta ({e}); rebuilding it")
+        return None
+
+
+def _write_train_metadata(
+    meta: TrainMetadata, sdf_path: str, source_stat: os.stat_result | None
+) -> None:
+    if source_stat is None:
+        source_stat = os.stat(sdf_path)
+    meta_path = f"{sdf_path}.meta"
+    # Unique temp name + atomic rename: concurrent jobs (possibly on different nodes
+    # sharing the filesystem) never see or produce a half-written sidecar.
+    tmp_path = f"{meta_path}.tmp.{uuid.uuid4().hex}"
+    try:
+        with open(tmp_path, "x") as f:
+            json.dump(
+                {
+                    "source_size": source_stat.st_size,
+                    "source_mtime_ns": source_stat.st_mtime_ns,
+                    "column_names": meta.column_names,
+                    "row_labels": meta.row_labels,
+                },
+                f,
+            )
+        os.replace(tmp_path, meta_path)
+    except OSError as e:
+        logger.warning(
+            f"Could not write {meta_path} ({e}); classification will keep loading the full table"
+        )
+        with contextlib.suppress(OSError):
+            os.remove(tmp_path)
 
 
 def from_sparse_dict(

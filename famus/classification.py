@@ -8,7 +8,7 @@ from sklearn.metrics import f1_score, pairwise_distances
 
 from famus.logging import logger
 from famus.model import MLP
-from famus.sdf import SparseDataFrame, load
+from famus.sdf import SparseDataFrame, load, load_train_metadata
 from famus.utils import even_split
 
 try:
@@ -32,11 +32,15 @@ def load_sparse_dataframes(
             sdf_train = pickle.load(f)
     else:
         sdf_train = load(sdf_train_path)
+    sdf_train.matrix = sdf_train.matrix.astype(np.float32)
+    return sdf_train, _load_classify_sdf(sdf_classify_path)
+
+
+def _load_classify_sdf(sdf_classify_path: str) -> SparseDataFrame:
     with open(sdf_classify_path, "rb") as f:
         sdf_classify = pickle.load(f)
-    sdf_train.matrix = sdf_train.matrix.astype(np.float32)
     sdf_classify.matrix = sdf_classify.matrix.astype(np.float32)
-    return sdf_train, sdf_classify
+    return sdf_classify
 
 
 def _calc_embeddings(sdf, model: MLP, device: Any, chunksize, n_processes):
@@ -72,16 +76,19 @@ def get_embeddings(
     chunksize,
     use_saved_embeddings,
     n_processes,
+    n_rows: int | None = None,
 ):
+    """`n_rows`: the expected row count of saved embeddings when `sdf` is None (not loaded)."""
     if embeddings_path is None or embeddings_path == "":
         use_saved_embeddings = False
     if use_saved_embeddings and os.path.exists(embeddings_path):
         logger.info("Loading embeddings")
         embeddings: np.ndarray = np.load(embeddings_path)
-        if embeddings.shape[0] != len(sdf):
+        expected_rows = len(sdf) if sdf is not None else n_rows
+        if embeddings.shape[0] != expected_rows:
             raise ValueError(
                 f"Cached embeddings at {embeddings_path} have {embeddings.shape[0]} "
-                f"rows but the SparseDataFrame has {len(sdf)} rows. The cache is stale "
+                f"rows but the SparseDataFrame has {expected_rows} rows. The cache is stale "
                 "(the model or training SDF changed since it was written). Delete the "
                 ".npy file and recompute."
             )
@@ -288,12 +295,24 @@ def classify(
     model = MLP.load_from_state(model_path, device=device)
     model.to(device)
     model.eval()
-    sdf_train: SparseDataFrame
+    sdf_train: SparseDataFrame | None
     sdf_classify: SparseDataFrame
     logger.info("Loading dataframes")
-    sdf_train, sdf_classify = load_sparse_dataframes(
-        sdf_train_path, sdf_classify_path, load_sdf_from_pickle
-    )
+    # The full training table is only needed to bootstrap a threshold or to compute
+    # train embeddings that were not saved; otherwise its row labels (sidecar) suffice.
+    if threshold == "bootstrap" or not (
+        train_embeddings_path and os.path.exists(train_embeddings_path)
+    ):
+        sdf_train, sdf_classify = load_sparse_dataframes(
+            sdf_train_path, sdf_classify_path, load_sdf_from_pickle
+        )
+        train_row_labels = [";".join(sdf_train.labels[k]) for k in sdf_train.index_ids]
+    else:
+        sdf_train = None
+        sdf_classify = _load_classify_sdf(sdf_classify_path)
+        train_row_labels = load_train_metadata(
+            sdf_train_path, load_sdf_from_pickle
+        ).row_labels
 
     if threshold == "bootstrap":
         threshold = calc_thresh(
@@ -323,6 +342,7 @@ def classify(
         chunksize=chunksize,
         use_saved_embeddings=True,
         n_processes=n_processes,
+        n_rows=len(train_row_labels),
     )
     classifiy_embeddings = get_embeddings(
         sdf=sdf_classify,
@@ -335,10 +355,7 @@ def classify(
     )
     logger.debug("Train embeddings shape: " + str(train_embeddings.shape))
     logger.debug("Classify embeddings shape: " + str(classifiy_embeddings.shape))
-    train_data_labels = sdf_train.labels
-    train_data_labels = [sdf_train.labels[k] for k in sdf_train.index_ids]
-    train_data_labels = [";".join(labels) for labels in train_data_labels]
-    train_data_labels = np.array(train_data_labels, dtype="object")
+    train_data_labels = np.array(train_row_labels, dtype="object")
     logger.debug("Train data labels shape: " + str(train_data_labels.shape))
     closest_distances, closest_indices = get_closest_distances_and_indices(
         train_embeddings, classifiy_embeddings, device, n_processes, chunksize=chunksize

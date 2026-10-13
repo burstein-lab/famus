@@ -16,7 +16,7 @@ from Bio import SeqIO
 from tqdm import tqdm
 
 from famus.logging import logger
-from famus.sdf import from_sparse_dict, load
+from famus.sdf import from_sparse_dict, load_train_metadata, save_train_metadata
 from famus.utils import concatenate_files, even_split, now
 
 SUBCLUSTER_SUFFIX_PATTERN = r"\.sub_cluster\.cluster\.\d+\.fasta$"
@@ -388,6 +388,7 @@ def hmmsearch_results_to_train_sdf(
             pickle.dump(sdf, f)
     else:
         sdf.save(output_sdf_path)
+    save_train_metadata(sdf, output_sdf_path)
 
 
 def hmmsearch_results_to_classification_sdf(
@@ -421,27 +422,25 @@ def hmmsearch_results_to_classification_sdf(
         seq_id = line[seq_id_idx]
         seen_ids.add(seq_id)
         sparse_dict[(seq_id, profile_id)] = int(float(score))
-    if load_sdf_from_pickle:
-        sdf_train = pickle.load(open(input_train_sdf_path, "rb"))
-    else:
-        sdf_train = load(input_train_sdf_path)
-    all_profiles = sdf_train.column_names
-    missing_profiles = set(all_profiles) - seen_profiles
+    train_column_names = load_train_metadata(
+        input_train_sdf_path, load_sdf_from_pickle
+    ).column_names
+    missing_profiles = set(train_column_names) - seen_profiles
     with open(input_fasta_path) as h:
         all_ids = [r.id for r in SeqIO.parse(h, "fasta")]
     some_id = all_ids[0]
     for m in list(missing_profiles):
         sparse_dict[(some_id, m)] = 0
     missing_records = set(all_ids) - seen_ids
-    some_profile = sdf_train.column_names[0]
+    some_profile = train_column_names[0]
     for m in missing_records:
         sparse_dict[(m, some_profile)] = 0
 
     sdf = from_sparse_dict(sparse_dict, labels=None, dtype=np.int64)
-    colnames = list(sdf.column_names)
-    new_order = [colnames.index(c) for c in sdf_train.column_names]
+    colname_to_index = {c: i for i, c in enumerate(sdf.column_names)}
+    new_order = [colname_to_index[c] for c in train_column_names]
     sdf.matrix = sdf.matrix[:, new_order]
-    sdf.column_names = sdf_train.column_names
+    sdf.column_names = np.array(train_column_names)
 
     logger.info("saving sdf")
     with open(output_path, "wb+") as f:
