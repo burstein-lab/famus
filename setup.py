@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="famus",
-    version="0.1.1",
+    version="0.2.4",
     packages=find_packages(),
     install_requires=[
         "numpy>=1.26.4,<2.0",
